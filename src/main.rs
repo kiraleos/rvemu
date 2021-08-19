@@ -341,7 +341,41 @@ impl Cpu {
                 }
             }
             InstTypeName::I => {}
-            InstTypeName::S => {}
+            InstTypeName::S => {
+                if let InstTypeData::S {
+                    imm,
+                    funct3,
+                    rs1,
+                    rs2,
+                } = inst.type_data
+                {
+                    match funct3 {
+                        0x0 => {
+                            inst.name = "sb";
+                            let index = rs1.wrapping_add(imm as usize);
+                            self.memory[index] =
+                                self.memory[index] | (rs2 & 0xff) as u32;
+                        }
+                        0x1 => {
+                            inst.name = "sh";
+                            let index = rs1.wrapping_add(imm as usize);
+                            self.memory[index] =
+                                self.memory[index] | (rs2 & 0xffff) as u32;
+                        }
+                        0x2 => {
+                            inst.name = "sw";
+                            let index = rs1.wrapping_add(imm as usize);
+                            self.memory[index] = (rs2 & 0xffffffff) as u32;
+                        }
+                        _ => {
+                            dbg!(
+                                "execute: unimplemented S funct3: {:#05b}",
+                                inst.opcode
+                            );
+                        }
+                    };
+                }
+            }
             InstTypeName::U => {
                 if let InstTypeData::U { rd, imm } = inst.type_data {
                     match inst.opcode {
