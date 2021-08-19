@@ -212,43 +212,184 @@ impl Cpu {
             }
 
             // Fence
-            0b0001111 => instruction.name = "fence",
-
-            _ => {
-                println!("unimplemented opcode: {:#09b}", opcode)
+            0b0001111 => {
+                instruction.type_data = InstTypeData::Unimplemented;
+                instruction.type_name = InstTypeName::Unimplemented;
             }
+
+            _ => println!("decode: unimplemented opcode: {:#09b}", opcode),
         }
         instruction
     }
 
-    fn execute(&mut self, inst: Instruction) {
+    fn execute(&mut self, inst: &mut Instruction) {
         match inst.type_name {
-            InstTypeName::R => {}
+            InstTypeName::R => {
+                if let InstTypeData::R {
+                    rd,
+                    funct3,
+                    funct7,
+                    rs1,
+                    rs2,
+                } = inst.type_data
+                {
+                    match funct3 {
+                        0x0 => match funct7 {
+                            0x0 => {
+                                inst.name = "add";
+                                self.registers[rd] = self.registers[rs1]
+                                    .wrapping_add(self.registers[rs2]);
+                            }
+                            0x20 => {
+                                inst.name = "sub";
+                                self.registers[rd] = self.registers[rs1]
+                                    .wrapping_sub(self.registers[rs2]);
+                            }
+                            _ => {
+                                dbg!(
+                                    "unimplemented R funct7: {:#09b}",
+                                    funct7
+                                );
+                            }
+                        },
+                        0x4 => {
+                            inst.name = "xor";
+                            self.registers[rd] =
+                                self.registers[rs1] ^ self.registers[rs2];
+                        }
+                        0x6 => {
+                            inst.name = "or";
+                            self.registers[rd] =
+                                self.registers[rs1] | self.registers[rs2];
+                        }
+                        0x7 => {
+                            inst.name = "and";
+                            self.registers[rd] =
+                                self.registers[rs1] & self.registers[rs2];
+                        }
+                        0x1 => {
+                            inst.name = "sll";
+                            self.registers[rd] =
+                                self.registers[rs1] << self.registers[rs2];
+                        }
+                        0x5 => match funct7 {
+                            0x0 => {
+                                inst.name = "srl";
+                                self.registers[rd] = self.registers[rs1]
+                                    >> self.registers[rs2];
+                            }
+                            0x20 => {
+                                inst.name = "sra";
+                                self.registers[rd] = ((self.registers[rs1]
+                                    as i32)
+                                    >> self.registers[rs2])
+                                    as u32;
+                            }
+                            _ => {
+                                dbg!(
+                                    "unimplemented R funct7: {:#09b}",
+                                    funct7
+                                );
+                            }
+                        },
+                        0x2 => {
+                            inst.name = "slt";
+                            self.registers[rd] = if (self.registers[rs1]
+                                as i32)
+                                < (self.registers[rs2] as i32)
+                            {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        0x3 => {
+                            inst.name = "sltu";
+                            self.registers[rd] = if self.registers[rs1]
+                                < self.registers[rs2]
+                            {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        _ => {
+                            dbg!(
+                                "execute: unimplemented R opcode: {:#09b}",
+                                inst.opcode
+                            );
+                        }
+                    };
+                }
+            }
             InstTypeName::B => {}
-            InstTypeName::J => {}
+            InstTypeName::J => {
+                if let InstTypeData::J { rd, imm } = inst.type_data {
+                    match inst.opcode {
+                        0b1101111 => {
+                            inst.name = "jal";
+                            self.registers[rd] = self.pc + 4;
+                            self.pc = self.pc.wrapping_add(imm);
+                        }
+                        _ => {
+                            dbg!(
+                                "execute: unimplemented J opcode: {:#09b}",
+                                inst.opcode
+                            );
+                        }
+                    };
+                }
+            }
             InstTypeName::I => {}
             InstTypeName::S => {}
-            InstTypeName::U => {}
+            InstTypeName::U => {
+                if let InstTypeData::U { rd, imm } = inst.type_data {
+                    match inst.opcode {
+                        0b0110111 => {
+                            inst.name = "lui";
+                            self.registers[rd] = imm;
+                        }
+                        0b0010111 => {
+                            inst.name = "auipc";
+                            self.registers[rd] = self.pc.wrapping_add(imm);
+                        }
+                        _ => {
+                            dbg!(
+                                "execute: unimplemented U opcode: {:#09b}",
+                                inst.opcode
+                            );
+                        }
+                    };
+                }
+            }
             InstTypeName::Unimplemented => {}
         }
     }
 
-    fn run(&mut self) {
+    fn run(&mut self) -> usize {
+        let mut cycles = 0usize;
         loop {
             let inst = self.fetch();
             let opcode = inst & 0b1111111;
             if (self.pc as usize) >= self.memory.len() || opcode == 0 {
-                break;
+                return cycles;
             }
-            let inst: Instruction = self.decode(inst);
-            self.execute(inst);
+            let mut inst: Instruction = self.decode(inst);
+            self.execute(&mut inst);
             self.pc = self.pc + 4;
+            cycles += 1;
         }
     }
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() != 2 {
+        println!("Usage: riscv-emulator <file>");
+        return;
+    }
     let mut cpu = Cpu::new();
-    cpu.load("./tests/rv32ui-p-add");
-    cpu.run();
+    cpu.load(args[1].as_str());
+    let cycles = cpu.run();
+    println!("cycles run: {}\n{:#x?}", cycles, cpu.registers);
 }
