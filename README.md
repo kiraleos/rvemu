@@ -19,5 +19,5 @@ $ cargo run --release <file>
 
 ### Example usage
 ```
-$ cargo run --release ./tests/rv32ui-p-add
+$ cargo run --release ./tests/add
 ```

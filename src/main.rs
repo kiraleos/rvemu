@@ -1,5 +1,4 @@
 use object::{Object, ObjectSection};
-
 const MEM_SIZE: usize = 32;
 
 #[derive(Debug)]
@@ -246,7 +245,7 @@ impl Cpu {
                                     .wrapping_sub(self.registers[rs2]);
                             }
                             _ => {
-                                dbg!(
+                                println!(
                                     "unimplemented R funct7: {:#09b}",
                                     funct7
                                 );
@@ -286,7 +285,7 @@ impl Cpu {
                                     as u32;
                             }
                             _ => {
-                                dbg!(
+                                println!(
                                     "unimplemented R funct7: {:#09b}",
                                     funct7
                                 );
@@ -314,9 +313,9 @@ impl Cpu {
                             }
                         }
                         _ => {
-                            dbg!(
-                                "execute: unimplemented R opcode: {:#09b}",
-                                inst.opcode
+                            println!(
+                                "execute: unimplemented R funct3: {:#05b}",
+                                funct3
                             );
                         }
                     };
@@ -380,7 +379,7 @@ impl Cpu {
                             };
                         }
                         _ => {
-                            dbg!(
+                            println!(
                                 "execute: unimplemented B funct3: {:#05b}",
                                 funct3
                             );
@@ -397,7 +396,7 @@ impl Cpu {
                             self.pc = self.pc.wrapping_add(imm);
                         }
                         _ => {
-                            dbg!(
+                            println!(
                                 "execute: unimplemented J opcode: {:#09b}",
                                 inst.opcode
                             );
@@ -405,7 +404,179 @@ impl Cpu {
                     };
                 }
             }
-            InstTypeName::I => {}
+            InstTypeName::I => {
+                if let InstTypeData::I {
+                    rd,
+                    funct3,
+                    rs1,
+                    imm,
+                } = inst.type_data
+                {
+                    match inst.opcode {
+                        0b0010011 => match funct3 {
+                            0x0 => {
+                                inst.name = "addi";
+                                self.registers[rd] = ((self.registers[rs1]
+                                    as i32)
+                                    + (imm as i32))
+                                    as u32;
+                            }
+                            0x4 => {
+                                inst.name = "xori";
+                                self.registers[rd] = ((self.registers[rs1]
+                                    as i32)
+                                    ^ (imm as i32))
+                                    as u32;
+                            }
+                            0x6 => {
+                                inst.name = "ori";
+                                self.registers[rd] = ((self.registers[rs1]
+                                    as i32)
+                                    | (imm as i32))
+                                    as u32;
+                            }
+                            0x7 => {
+                                inst.name = "andi";
+                                self.registers[rd] = ((self.registers[rs1]
+                                    as i32)
+                                    & (imm as i32))
+                                    as u32;
+                            }
+                            0x2 => {
+                                inst.name = "slti";
+                                self.registers[rd] =
+                                    if (self.registers[rs1] as i32)
+                                        < (imm as i32)
+                                    {
+                                        1
+                                    } else {
+                                        0
+                                    }
+                            }
+                            0x3 => {
+                                inst.name = "sltiu";
+                                self.registers[rd] =
+                                    if self.registers[rs1] < imm {
+                                        1
+                                    } else {
+                                        0
+                                    }
+                            }
+                            0x1 => {
+                                inst.name = "slli";
+                                let shamt = imm & 0b11111;
+                                self.registers[rd] =
+                                    self.registers[rs1] << shamt;
+                            }
+                            0x5 => match (imm >> 30) & 0b1 {
+                                0 => {
+                                    inst.name = "srli";
+                                    let shamt = imm & 0b11111;
+                                    self.registers[rd] =
+                                        self.registers[rs1] >> shamt;
+                                }
+                                1 => {
+                                    inst.name = "srai";
+                                    let shamt = imm & 0b11111;
+                                    self.registers[rd] =
+                                        (self.registers[rs1] as i32
+                                            >> shamt)
+                                            as u32;
+                                }
+                                _ => {
+                                    println!("should never be here.");
+                                }
+                            },
+                            _ => {
+                                println!(
+                                "execute: unimplemented I funct3: {:#05b}",
+                                funct3
+                            );
+                            }
+                        },
+                        0b0000011 => match funct3 {
+                            0x0 => {
+                                inst.name = "lb";
+                                let index =
+                                    (self.registers[rs1] + imm) as usize;
+                                self.registers[rd] =
+                                    ((self.memory[index] & 0xff) as i32)
+                                        as u32;
+                            }
+                            0x1 => {
+                                inst.name = "lh";
+                                let index =
+                                    (self.registers[rs1] + imm) as usize;
+                                self.registers[rd] =
+                                    ((self.memory[index] & 0xffff) as i32)
+                                        as u32;
+                            }
+                            0x2 => {
+                                inst.name = "lw";
+                                let index =
+                                    (self.registers[rs1] + imm) as usize;
+                                self.registers[rd] = self.memory[index];
+                            }
+                            0x4 => {
+                                inst.name = "lbu";
+                                let index =
+                                    (self.registers[rs1] + imm) as usize;
+                                self.registers[rd] =
+                                    self.memory[index] & 0xff;
+                            }
+                            0x5 => {
+                                inst.name = "lhu";
+                                let index =
+                                    (self.registers[rs1] + imm) as usize;
+                                self.registers[rd] =
+                                    self.memory[index] & 0xffff;
+                            }
+                            _ => {
+                                println!(
+                                    "execute: unimplemented I funct3: {:#05b}",
+                                    funct3
+                                );
+                            }
+                        },
+                        0b1100111 => match funct3 {
+                            0x0 => {
+                                inst.name = "jalr";
+                                self.registers[rd] = self.pc + 4;
+                                self.pc =
+                                    imm.wrapping_add(self.registers[rs1]);
+                            }
+                            _ => {
+                                println!(
+                                    "execute: unimplemented I funct3: {:#05b}",
+                                    funct3
+                                );
+                            }
+                        },
+                        0b1110011 => match funct3 {
+                            0x0 => match imm {
+                                0x0 => {
+                                    inst.name = "ecall";
+                                }
+                                0x1 => {
+                                    inst.name = "ebreak";
+                                }
+                                _ => {
+                                    dbg!("shouldnt be here");
+                                }
+                            },
+                            _ => {
+                                dbg!("shouldnt be here");
+                            }
+                        },
+                        _ => {
+                            println!(
+                                "execute: unimplemented I opcode: {:#09b}",
+                                inst.opcode
+                            );
+                        }
+                    };
+                }
+            }
             InstTypeName::S => {
                 if let InstTypeData::S {
                     imm,
@@ -440,7 +611,7 @@ impl Cpu {
                                 self.registers[rs2] & 0xffffffff;
                         }
                         _ => {
-                            dbg!(
+                            println!(
                                 "execute: unimplemented S funct3: {:#05b}",
                                 funct3
                             );
@@ -460,7 +631,7 @@ impl Cpu {
                             self.registers[rd] = self.pc.wrapping_add(imm);
                         }
                         _ => {
-                            dbg!(
+                            println!(
                                 "execute: unimplemented U opcode: {:#09b}",
                                 inst.opcode
                             );
@@ -468,7 +639,12 @@ impl Cpu {
                     };
                 }
             }
-            InstTypeName::Unimplemented => {}
+            InstTypeName::Unimplemented => {
+                println!(
+                    "execute: unimplemented instruction type: {:#?}",
+                    inst
+                );
+            }
         }
     }
 
@@ -482,6 +658,7 @@ impl Cpu {
             }
             let mut inst: Instruction = self.decode(inst);
             self.execute(&mut inst);
+            println!("{:2}: {:#}", cycles + 1, inst.name);
             self.pc = self.pc + 4;
             cycles += 1;
         }
@@ -496,6 +673,6 @@ fn main() {
     }
     let mut cpu = Cpu::new();
     cpu.load(args[1].as_str());
-    let cycles = cpu.run();
-    println!("cycles run: {}\n{:#x?}", cycles, cpu.registers);
+    cpu.run();
+    println!("{:#x?}\npc: {:#x}", cpu.registers, cpu.pc);
 }
