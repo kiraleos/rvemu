@@ -138,10 +138,10 @@ impl Cpu {
                     31 => "t6".to_string(),
                     _ => "error".to_string(),
                 };
-                println!("{:<3}: {:>3x}", reg_name, self.registers[i]);
+                println!("{:>3}: 0x{:0>8x}", reg_name, self.registers[i]);
             } else {
                 reg_name = i.to_string();
-                println!("{:<2}: {:>3x}", reg_name, self.registers[i]);
+                println!("{:>2}: {:>3x}", reg_name, self.registers[i]);
             }
         }
     }
@@ -806,7 +806,7 @@ impl Cpu {
             let inst = self.fetch();
             let mut inst: Instruction = self.decode(inst);
             self.execute(&mut inst);
-            println!("0x{:<3x}: {}", self.pc - 4, inst.name);
+            println!("0x{:<04x}: {}", self.pc - 4, inst.name);
 
             if (self.pc as usize) >= self.memory.len()
                 || match inst.type_name {
@@ -830,5 +830,5 @@ fn main() {
     let mut cpu = Cpu::new();
     cpu.load(args[1].as_str());
     cpu.run();
-    cpu.print_state(false);
+    cpu.print_state(true);
 }
