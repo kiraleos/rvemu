@@ -29,6 +29,7 @@ enum InstTypeName {
     U,
     J,
     Unimplemented,
+    Fence,
 }
 
 #[derive(Debug)]
@@ -67,6 +68,7 @@ enum InstTypeData {
         imm: u32,
     },
     Unimplemented,
+    Fence,
 }
 
 struct Cpu {
@@ -212,8 +214,8 @@ impl Cpu {
 
             // Fence
             0b0001111 => {
-                instruction.type_data = InstTypeData::Unimplemented;
-                instruction.type_name = InstTypeName::Unimplemented;
+                instruction.type_data = InstTypeData::Fence;
+                instruction.type_name = InstTypeName::Fence;
             }
 
             _ => println!("decode: unimplemented opcode: {:#09b}", opcode),
@@ -420,6 +422,10 @@ impl Cpu {
                                     as i32)
                                     + (imm as i32))
                                     as u32;
+
+                                if rd == 0 && rs1 == 0 && imm == 0 {
+                                    inst.name = "nop (addi)";
+                                }
                             }
                             0x4 => {
                                 inst.name = "xori";
@@ -645,6 +651,7 @@ impl Cpu {
                     inst
                 );
             }
+            InstTypeName::Fence => inst.name = "nop (fence)",
         }
     }
 
