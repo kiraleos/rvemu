@@ -99,6 +99,53 @@ impl Cpu {
         self.pc = 0;
     }
 
+    fn print_state(&self, aliases: bool) {
+        let mut reg_name;
+        for i in 0..self.registers.len() {
+            if aliases {
+                reg_name = match i {
+                    0 => "x0".to_string(),
+                    1 => "ra".to_string(),
+                    2 => "sp".to_string(),
+                    3 => "gp".to_string(),
+                    4 => "tp".to_string(),
+                    5 => "t0".to_string(),
+                    6 => "t1".to_string(),
+                    7 => "t2".to_string(),
+                    8 => "s0".to_string(),
+                    9 => "s1".to_string(),
+                    10 => "a0".to_string(),
+                    11 => "a1".to_string(),
+                    12 => "a2".to_string(),
+                    13 => "a3".to_string(),
+                    14 => "a4".to_string(),
+                    15 => "a5".to_string(),
+                    16 => "a6".to_string(),
+                    17 => "a7".to_string(),
+                    18 => "s2".to_string(),
+                    19 => "s3".to_string(),
+                    20 => "s4".to_string(),
+                    21 => "s5".to_string(),
+                    22 => "s6".to_string(),
+                    23 => "s7".to_string(),
+                    24 => "s8".to_string(),
+                    25 => "s9".to_string(),
+                    26 => "s10".to_string(),
+                    27 => "s11".to_string(),
+                    28 => "t3".to_string(),
+                    29 => "t4".to_string(),
+                    30 => "t5".to_string(),
+                    31 => "t6".to_string(),
+                    _ => "error".to_string(),
+                };
+                println!("{:<3}: {:>3x}", reg_name, self.registers[i]);
+            } else {
+                reg_name = i.to_string();
+                println!("{:<2}: {:>3x}", reg_name, self.registers[i]);
+            }
+        }
+    }
+
     fn fetch(&self) -> u32 {
         let index = self.pc as usize;
         self.memory[index]
@@ -642,7 +689,7 @@ impl Cpu {
                                 return;
                             }
                             _ => {
-                                inst.name=format!(
+                                inst.name = format!(
                                     "execute: unimplemented I funct3: {:#05b}",
                                     funct3
                                 );
@@ -658,11 +705,11 @@ impl Cpu {
                                         inst.name = String::from("ebreak");
                                     }
                                     _ => {
-                                        inst.name=format!("unknown ecall/ebreak imm: {:#034b}", imm);
+                                        inst.name = format!("unknown ecall/ebreak imm: {:#014b}", imm);
                                     }
                                 },
                                 _ => {
-                                    inst.name=format!("unknown ecall/ebreak funct3: {:#05b}", funct3);
+                                    inst.name = format!("unknown ecall/ebreak funct3: {:#05b}", funct3);
                                 }
                             }
                         }
@@ -783,5 +830,5 @@ fn main() {
     let mut cpu = Cpu::new();
     cpu.load(args[1].as_str());
     cpu.run();
-    println!("{:#x?}\npc: {:#x}", cpu.registers, cpu.pc);
+    cpu.print_state(false);
 }
