@@ -645,13 +645,13 @@ impl Cpu {
                     };
                 }
             }
+            InstTypeName::Fence => inst.name = "nop (fence)",
             InstTypeName::Unimplemented => {
                 println!(
                     "execute: unimplemented instruction type: {:#?}",
                     inst
                 );
             }
-            InstTypeName::Fence => inst.name = "nop (fence)",
         }
     }
 
