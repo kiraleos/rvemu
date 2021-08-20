@@ -805,8 +805,9 @@ impl Cpu {
         loop {
             let inst = self.fetch();
             let mut inst: Instruction = self.decode(inst);
+            let pc_copy = self.pc;
             self.execute(&mut inst);
-            println!("0x{:<04x}: {}", self.pc - 4, inst.name);
+            println!("0x{:<08x}:        {}", pc_copy, inst.name);
 
             if (self.pc as usize) >= self.memory.len()
                 || match inst.type_name {
