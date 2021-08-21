@@ -141,7 +141,7 @@ impl Cpu {
                 println!("{:>3}: 0x{:0>8x}", reg_name, self.registers[i]);
             } else {
                 reg_name = i.to_string();
-                println!("{:>2}: {:>3x}", reg_name, self.registers[i]);
+                println!("{:>2}: 0x{:0>8x}", reg_name, self.registers[i]);
             }
         }
     }
@@ -289,7 +289,7 @@ impl Cpu {
                         0x0 => match funct7 {
                             0x0 => {
                                 inst.name = format!(
-                                    "add x{}, x{}, x{}",
+                                    "add x{},x{},x{}",
                                     rd, rs1, rs2
                                 );
                                 self.registers[rd] = self.registers[rs1]
@@ -297,7 +297,7 @@ impl Cpu {
                             }
                             0x20 => {
                                 inst.name = format!(
-                                    "sub x{}, x{}, x{}",
+                                    "sub x{},x{},x{}",
                                     rd, rs1, rs2
                                 );
                                 self.registers[rd] = self.registers[rs1]
@@ -312,32 +312,32 @@ impl Cpu {
                         },
                         0x4 => {
                             inst.name =
-                                format!("xor x{}, x{}, x{}", rd, rs1, rs2);
+                                format!("xor x{},x{},x{}", rd, rs1, rs2);
                             self.registers[rd] =
                                 self.registers[rs1] ^ self.registers[rs2];
                         }
                         0x6 => {
                             inst.name =
-                                format!("or x{}, x{}, x{}", rd, rs1, rs2);
+                                format!("or x{},x{},x{}", rd, rs1, rs2);
                             self.registers[rd] =
                                 self.registers[rs1] | self.registers[rs2];
                         }
                         0x7 => {
                             inst.name =
-                                format!("and x{}, x{}, x{}", rd, rs1, rs2);
+                                format!("and x{},x{},x{}", rd, rs1, rs2);
                             self.registers[rd] =
                                 self.registers[rs1] & self.registers[rs2];
                         }
                         0x1 => {
                             inst.name =
-                                format!("sll x{}, x{}, x{}", rd, rs1, rs2);
+                                format!("sll x{},x{},x{}", rd, rs1, rs2);
                             self.registers[rd] =
                                 self.registers[rs1] << self.registers[rs2];
                         }
                         0x5 => match funct7 {
                             0x0 => {
                                 inst.name = format!(
-                                    "srl x{}, x{}, x{}",
+                                    "srl x{},x{},x{}",
                                     rd, rs1, rs2
                                 );
                                 self.registers[rd] = self.registers[rs1]
@@ -345,7 +345,7 @@ impl Cpu {
                             }
                             0x20 => {
                                 inst.name = format!(
-                                    "sra x{}, x{}, x{}",
+                                    "sra x{},x{},x{}",
                                     rd, rs1, rs2
                                 );
                                 self.registers[rd] = ((self.registers[rs1]
@@ -362,7 +362,7 @@ impl Cpu {
                         },
                         0x2 => {
                             inst.name =
-                                format!("slt x{}, x{}, x{}", rd, rs1, rs2);
+                                format!("slt x{},x{},x{}", rd, rs1, rs2);
                             self.registers[rd] = if (self.registers[rs1]
                                 as i32)
                                 < (self.registers[rs2] as i32)
@@ -373,10 +373,8 @@ impl Cpu {
                             }
                         }
                         0x3 => {
-                            inst.name = format!(
-                                "sltu x{}, x{}, x{}",
-                                rd, rs1, rs2
-                            );
+                            inst.name =
+                                format!("sltu x{},x{},x{}", rd, rs1, rs2);
                             self.registers[rd] = if self.registers[rs1]
                                 < self.registers[rs2]
                             {
@@ -405,7 +403,7 @@ impl Cpu {
                     match funct3 {
                         0x0 => {
                             inst.name = format!(
-                                "beq x{}, x{}, {:#x}",
+                                "beq x{},x{},{:08x}",
                                 rs1, rs2, imm
                             );
                             let lhs = self.registers[rs1];
@@ -416,7 +414,7 @@ impl Cpu {
                         }
                         0x1 => {
                             inst.name = format!(
-                                "bne x{}, x{}, {:#x}",
+                                "bne x{},x{},{:08x}",
                                 rs1, rs2, imm
                             );
                             let lhs = self.registers[rs1];
@@ -427,7 +425,7 @@ impl Cpu {
                         }
                         0x4 => {
                             inst.name = format!(
-                                "blt x{}, x{}, {:#x}",
+                                "blt x{},x{},{:08x}",
                                 rs1, rs2, imm
                             );
                             let lhs = self.registers[rs1] as i32;
@@ -438,7 +436,7 @@ impl Cpu {
                         }
                         0x5 => {
                             inst.name = format!(
-                                "bge x{}, x{}, {:#x}",
+                                "bge x{},x{},{:08x}",
                                 rs1, rs2, imm
                             );
                             let lhs = self.registers[rs1] as i32;
@@ -449,7 +447,7 @@ impl Cpu {
                         }
                         0x6 => {
                             inst.name = format!(
-                                "bltu x{}, x{}, {:#x}",
+                                "bltu x{},x{},{:08x}",
                                 rs1, rs2, imm
                             );
                             let lhs = self.registers[rs1];
@@ -460,7 +458,7 @@ impl Cpu {
                         }
                         0x7 => {
                             inst.name = format!(
-                                "bgeu x{}, x{}, {:#x}",
+                                "bgeu x{},x{},{:08x}",
                                 rs1, rs2, imm
                             );
                             let lhs = self.registers[rs1];
@@ -482,9 +480,10 @@ impl Cpu {
                 if let InstTypeData::J { rd, imm } = inst.type_data {
                     match inst.opcode {
                         0b1101111 => {
-                            inst.name = format!("jal x{}, {:#x}", rd, imm);
+                            inst.name = format!("jal x{},{:08x}", rd, imm);
                             self.registers[rd] = self.pc + 4;
                             self.pc = self.pc.wrapping_add(imm);
+                            self.registers[0] = 0;
                             return;
                         }
                         _ => {
@@ -508,7 +507,7 @@ impl Cpu {
                         0b0010011 => match funct3 {
                             0x0 => {
                                 inst.name = format!(
-                                    "addi x{}, x{}, {:#x}",
+                                    "addi x{},x{},{}",
                                     rd, rs1, imm
                                 );
                                 self.registers[rd] = ((self.registers[rs1]
@@ -522,7 +521,7 @@ impl Cpu {
                             }
                             0x4 => {
                                 inst.name = format!(
-                                    "xori x{}, x{}, {:#x}",
+                                    "xori x{},x{},{}",
                                     rd, rs1, imm
                                 );
                                 self.registers[rd] = ((self.registers[rs1]
@@ -532,7 +531,7 @@ impl Cpu {
                             }
                             0x6 => {
                                 inst.name = format!(
-                                    "ori x{}, x{}, {:#x}",
+                                    "ori x{},x{},{}",
                                     rd, rs1, imm
                                 );
                                 self.registers[rd] = ((self.registers[rs1]
@@ -542,7 +541,7 @@ impl Cpu {
                             }
                             0x7 => {
                                 inst.name = format!(
-                                    "andi x{}, x{}, {:#x}",
+                                    "andi x{},x{},{}",
                                     rd, rs1, imm
                                 );
                                 self.registers[rd] = ((self.registers[rs1]
@@ -552,7 +551,7 @@ impl Cpu {
                             }
                             0x2 => {
                                 inst.name = format!(
-                                    "slti x{}, x{}, {:#x}",
+                                    "slti x{},x{},{}",
                                     rd, rs1, imm
                                 );
                                 self.registers[rd] =
@@ -566,7 +565,7 @@ impl Cpu {
                             }
                             0x3 => {
                                 inst.name = format!(
-                                    "sltiu x{}, x{}, {:#x}",
+                                    "sltiu x{},x{},{}",
                                     rd, rs1, imm
                                 );
                                 self.registers[rd] =
@@ -579,7 +578,7 @@ impl Cpu {
                             0x1 => {
                                 let shamt = imm & 0b11111;
                                 inst.name = format!(
-                                    "slli x{}, x{}, x{}",
+                                    "slli x{},x{}, x{}",
                                     rd, rs1, shamt
                                 );
                                 self.registers[rd] =
@@ -589,7 +588,7 @@ impl Cpu {
                                 0 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
-                                        "srli x{}, x{}, x{}",
+                                        "srli x{},x{}, x{}",
                                         rd, rs1, shamt
                                     );
                                     self.registers[rd] =
@@ -598,7 +597,7 @@ impl Cpu {
                                 1 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
-                                        "srai x{}, x{}, x{}",
+                                        "srai x{},x{}, x{}",
                                         rd, rs1, shamt
                                     );
                                     self.registers[rd] =
@@ -686,6 +685,7 @@ impl Cpu {
                                 self.registers[rd] = self.pc + 4;
                                 self.pc =
                                     imm.wrapping_add(self.registers[rs1]);
+                                self.registers[0] = 0;
                                 return;
                             }
                             _ => {
@@ -777,12 +777,12 @@ impl Cpu {
                 if let InstTypeData::U { rd, imm } = inst.type_data {
                     match inst.opcode {
                         0b0110111 => {
-                            inst.name = format!("lui x{}, {:#x}", rd, imm);
+                            inst.name = format!("lui x{},{:#x}", rd, imm);
                             self.registers[rd] = imm;
                         }
                         0b0010111 => {
                             inst.name =
-                                format!("auipc x{}, {:#x}", rd, imm);
+                                format!("auipc x{},{:#x}", rd, imm);
                             self.registers[rd] = self.pc.wrapping_add(imm);
                         }
                         _ => {
@@ -797,22 +797,43 @@ impl Cpu {
             InstTypeName::Fence => inst.name = String::from("nop (fence)"),
             InstTypeName::Unimp => inst.name = String::from("unimp"),
         }
+        self.registers[0] = 0;
         self.pc += 4;
     }
 
     fn run(&mut self) -> usize {
         let mut cycles = 0usize;
-        println!("PC                 INST");
+        println!("PC              RAW_INST                INST");
         loop {
-            let inst = self.fetch();
-            let mut inst: Instruction = self.decode(inst);
+            let raw_inst = self.fetch();
+            let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
             self.execute(&mut inst);
-            println!("0x{:<08x}:        {}", pc_copy, inst.name);
-
+            println!(
+                "{:<08x}:       {:08x}                {}",
+                pc_copy, raw_inst, inst.name
+            );
+            if self.registers[0] != 0 {
+                println!("0 register changed.");
+                return 1;
+            }
             if (self.pc as usize) >= self.memory.len()
                 || match inst.type_name {
                     InstTypeName::Unimp => true,
+                    _ => false,
+                }
+                || match inst.name.as_str() {
+                    "ecall" => {
+                        if self.registers[17] == 93 {
+                            println!(
+                                "Program exited with status code: {}",
+                                self.registers[10]
+                            );
+                            true
+                        } else {
+                            false
+                        }
+                    }
                     _ => false,
                 }
             {
@@ -832,5 +853,5 @@ fn main() {
     let mut cpu = Cpu::new();
     cpu.load(args[1].as_str());
     cpu.run();
-    cpu.print_state(true);
+    cpu.print_state(false);
 }
