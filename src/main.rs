@@ -802,6 +802,7 @@ impl Cpu {
 
     fn run(&mut self) -> usize {
         let mut cycles = 0usize;
+        println!("PC                 INST");
         loop {
             let inst = self.fetch();
             let mut inst: Instruction = self.decode(inst);
