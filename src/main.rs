@@ -1,3 +1,7 @@
+/*
+    Fix imm values not being decoded as negative
+*/
+
 use object::{Object, ObjectSection};
 const MEM_SIZE: usize = 32;
 
@@ -873,13 +877,10 @@ impl Cpu {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        println!("Usage: riscv-emulator <file>");
-        return;
-    }
+    let mut args = std::env::args().skip(1);
+    let path = args.next().unwrap_or_else(|| "./tests/addi".into());
     let mut cpu = Cpu::new();
-    cpu.load(args[1].as_str());
+    cpu.load(&path);
     cpu.run();
     cpu.print_state(false);
 }
