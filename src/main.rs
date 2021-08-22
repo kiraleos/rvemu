@@ -423,7 +423,8 @@ impl Cpu {
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
                             if lhs == rhs {
-                                self.pc += imm
+                                self.pc += imm;
+                                return;
                             };
                         }
                         0x1 => {
@@ -436,7 +437,8 @@ impl Cpu {
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
                             if lhs != rhs {
-                                self.pc += imm
+                                self.pc += imm;
+                                return;
                             };
                         }
                         0x4 => {
@@ -449,7 +451,8 @@ impl Cpu {
                             let lhs = self.registers[rs1] as i32;
                             let rhs = self.registers[rs2] as i32;
                             if lhs < rhs {
-                                self.pc += imm
+                                self.pc += imm;
+                                return;
                             };
                         }
                         0x5 => {
@@ -462,7 +465,8 @@ impl Cpu {
                             let lhs = self.registers[rs1] as i32;
                             let rhs = self.registers[rs2] as i32;
                             if lhs >= rhs {
-                                self.pc += imm
+                                self.pc += imm;
+                                return;
                             };
                         }
                         0x6 => {
@@ -475,7 +479,8 @@ impl Cpu {
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
                             if lhs < rhs {
-                                self.pc += imm
+                                self.pc += imm;
+                                return;
                             };
                         }
                         0x7 => {
@@ -488,7 +493,8 @@ impl Cpu {
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
                             if lhs >= rhs {
-                                self.pc += imm
+                                self.pc += imm;
+                                return;
                             };
                         }
                         _ => {
