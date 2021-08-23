@@ -6,4 +6,3 @@ edition = "2018"
 
 [dependencies]
 object = "0.26.0"
-log = "0.4.14"
