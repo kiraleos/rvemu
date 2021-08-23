@@ -873,9 +873,8 @@ impl Cpu {
         self.pc += 4;
     }
 
-    fn run(&mut self) -> i32 {
+    fn run(&mut self) {
         println!("PC              RAW_INST                INST");
-        let mut status_code: i32 = 666;
         loop {
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
@@ -888,13 +887,11 @@ impl Cpu {
 
             if (self.pc as usize) > self.memory.len() {
                 println!("PC overflow.");
-                status_code = -1;
                 break;
             }
             match inst.type_name {
                 InstTypeName::Unimp => {
                     println!("Reached an `unimp` instruction.");
-                    status_code = -1;
                     break;
                 }
                 _ => {}
@@ -906,7 +903,6 @@ impl Cpu {
                             "Program exited with status code: {}",
                             self.registers[10]
                         );
-                        status_code = self.registers[10] as i32;
                         break;
                     }
                     _ => {
@@ -920,7 +916,6 @@ impl Cpu {
                 _ => {}
             }
         }
-        status_code
     }
 }
 
@@ -929,6 +924,6 @@ fn main() {
     let path = args.next().unwrap_or_else(|| "./tests/addi".into());
     let mut cpu = Cpu::new();
     cpu.load(&path);
-    let status_code = cpu.run();
+    cpu.run();
     cpu.print_state(true);
 }
