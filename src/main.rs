@@ -837,9 +837,9 @@ impl Cpu {
         self.pc += 4;
     }
 
-    fn run(&mut self) -> usize {
-        let mut cycles = 0usize;
+    fn run(&mut self) -> u32 {
         println!("PC              RAW_INST                INST");
+        let mut status_code = 666;
         loop {
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
@@ -849,30 +849,40 @@ impl Cpu {
                 "{:<08x}:       {:08x}                {}",
                 pc_copy, raw_inst, inst.name
             );
-            if (self.pc as usize) >= self.memory.len()
-                || match inst.type_name {
-                    InstTypeName::Unimp => true,
-                    _ => false,
-                }
-                || match inst.name.as_str() {
-                    "ecall" => {
-                        if self.registers[17] == 93 {
-                            println!(
-                                "Program exited with status code: {}",
-                                self.registers[10]
-                            );
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false,
-                }
-            {
-                return cycles;
+
+            if (self.pc as usize) >= self.memory.len() {
+                status_code = std::u32::MAX;
+                break;
             }
-            cycles += 1;
+            match inst.type_name {
+                InstTypeName::Unimp => {
+                    status_code = std::u32::MAX;
+                    break;
+                }
+                _ => {}
+            }
+            match inst.name.as_str() {
+                "ecall" => match self.registers[17] {
+                    93 => {
+                        println!(
+                            "Program exited with status code: {}",
+                            self.registers[10]
+                        );
+                        status_code = self.registers[10];
+                        break;
+                    }
+                    _ => {
+                        println!(
+                            "Unimplemented ECALL: {}",
+                            self.registers[17],
+                        );
+                        break;
+                    }
+                },
+                _ => {}
+            }
         }
+        status_code
     }
 }
 
@@ -881,6 +891,6 @@ fn main() {
     let path = args.next().unwrap_or_else(|| "./tests/addi".into());
     let mut cpu = Cpu::new();
     cpu.load(&path);
-    cpu.run();
+    let status_code = cpu.run();
     cpu.print_state(false);
 }
