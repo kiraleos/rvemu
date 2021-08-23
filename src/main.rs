@@ -873,25 +873,34 @@ impl Cpu {
         self.pc += 4;
     }
 
-    fn run(&mut self) {
-        println!("PC              RAW_INST                INST");
+    fn run(&mut self, debug: bool) -> i32 {
+        if debug {
+            println!("PC              RAW_INST                INST");
+        }
+        let mut ret: i32 = -1;
         loop {
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
             self.execute(&mut inst);
-            println!(
-                "{:<08x}:       {:08x}                {}",
-                pc_copy, raw_inst, inst.name
-            );
+            if debug {
+                println!(
+                    "{:<08x}:       {:08x}                {}",
+                    pc_copy, raw_inst, inst.name
+                );
+            }
 
             if (self.pc as usize) > self.memory.len() {
-                println!("PC overflow.");
+                if debug {
+                    println!("PC overflow.");
+                }
                 break;
             }
             match inst.type_name {
                 InstTypeName::Unimp => {
-                    println!("Reached an `unimp` instruction.");
+                    if debug {
+                        println!("Reached an `unimp` instruction.");
+                    }
                     break;
                 }
                 _ => {}
@@ -899,23 +908,29 @@ impl Cpu {
             match inst.name.as_str() {
                 "ecall" => match self.registers[17] {
                     93 => {
-                        println!(
-                            "Program exited with status code: {}",
-                            self.registers[10]
-                        );
+                        if debug {
+                            println!(
+                                "Program exited with status code: {}",
+                                self.registers[10]
+                            );
+                        }
+                        ret = self.registers[10] as i32;
                         break;
                     }
                     _ => {
-                        println!(
-                            "Unimplemented ECALL: {}",
-                            self.registers[17],
-                        );
+                        if debug {
+                            println!(
+                                "Unimplemented ECALL: {}",
+                                self.registers[17],
+                            );
+                        }
                         break;
                     }
                 },
                 _ => {}
             }
         }
+        ret
     }
 }
 
@@ -924,6 +939,8 @@ fn main() {
     let path = args.next().unwrap_or_else(|| "./tests/addi".into());
     let mut cpu = Cpu::new();
     cpu.load(&path);
-    cpu.run();
-    cpu.print_state(true);
+    let ret = cpu.run(false);
+    if ret != 0 {
+        cpu.run(true);
+    }
 }
