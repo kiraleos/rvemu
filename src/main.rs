@@ -617,7 +617,7 @@ impl Cpu {
                             0x1 => {
                                 let shamt = imm & 0b11111;
                                 inst.name = format!(
-                                    "slli    x{},x{},x{}",
+                                    "slli    x{},x{},{:#x}",
                                     rd, rs1, shamt
                                 );
                                 self.registers[rd] =
@@ -627,7 +627,7 @@ impl Cpu {
                                 0 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
-                                        "srli    x{},x{},x{}",
+                                        "srli    x{},x{},{:#x}",
                                         rd, rs1, shamt
                                     );
                                     self.registers[rd] =
@@ -636,7 +636,7 @@ impl Cpu {
                                 1 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
-                                        "srai    x{},x{},x{}",
+                                        "srai    x{},x{},{:#x}",
                                         rd, rs1, shamt
                                     );
                                     self.registers[rd] =
@@ -659,8 +659,8 @@ impl Cpu {
                         0b0000011 => match funct3 {
                             0x0 => {
                                 inst.name = format!(
-                                    "lb      x{},x{},{:#x}",
-                                    rd, rs1, imm
+                                    "lb      x{},{}(x{})",
+                                    rd, imm, rs1
                                 );
                                 let index =
                                     (self.registers[rs1] + imm) as usize;
@@ -670,8 +670,8 @@ impl Cpu {
                             }
                             0x1 => {
                                 inst.name = format!(
-                                    "lh      x{},x{},{:#x}",
-                                    rd, rs1, imm
+                                    "lh      x{},{}(x{})",
+                                    rd, imm, rs1
                                 );
                                 let index =
                                     (self.registers[rs1] + imm) as usize;
@@ -681,8 +681,8 @@ impl Cpu {
                             }
                             0x2 => {
                                 inst.name = format!(
-                                    "lw      x{},x{},{:#x}",
-                                    rd, rs1, imm
+                                    "lw      x{},{}(x{})",
+                                    rd, imm, rs1
                                 );
                                 let index =
                                     (self.registers[rs1] + imm) as usize;
@@ -690,8 +690,8 @@ impl Cpu {
                             }
                             0x4 => {
                                 inst.name = format!(
-                                    "lbu     x{},x{},{:#x}",
-                                    rd, rs1, imm
+                                    "lbu     x{},{}(x{})",
+                                    rd, imm, rs1
                                 );
                                 let index =
                                     (self.registers[rs1] + imm) as usize;
@@ -700,8 +700,8 @@ impl Cpu {
                             }
                             0x5 => {
                                 inst.name = format!(
-                                    "lhu     x{},x{},{:#x}",
-                                    rd, rs1, imm
+                                    "lhu     x{},{}(x{})",
+                                    rd, imm, rs1
                                 );
                                 let index =
                                     (self.registers[rs1] + imm) as usize;
@@ -808,8 +808,8 @@ impl Cpu {
                     match funct3 {
                         0x0 => {
                             inst.name = format!(
-                                "sb      x{},x{},{:#x}",
-                                rs1, rs2, imm
+                                "sb      x{},{}(x{})",
+                                rs2, imm, rs1
                             );
                             let index = self.registers[rs1]
                                 .wrapping_add(imm)
@@ -819,8 +819,8 @@ impl Cpu {
                         }
                         0x1 => {
                             inst.name = format!(
-                                "sh      x{},x{},{:#x}",
-                                rs1, rs2, imm
+                                "sh      x{},{}(x{})",
+                                rs2, imm, rs1
                             );
                             let index = self.registers[rs1]
                                 .wrapping_add(imm)
@@ -830,8 +830,8 @@ impl Cpu {
                         }
                         0x2 => {
                             inst.name = format!(
-                                "sw      x{},x{},{:#x}",
-                                rs1, rs2, imm
+                                "sw      x{},{}(x{})",
+                                rs2, imm, rs1
                             );
                             let index = self.registers[rs1]
                                 .wrapping_add(imm)
