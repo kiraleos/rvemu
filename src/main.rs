@@ -103,6 +103,7 @@ impl Cpu {
         self.pc = 0;
     }
 
+    #[allow(dead_code)]
     fn print_state(&self, aliases: bool) {
         let mut reg_name;
         for i in 0..self.registers.len() {
@@ -269,7 +270,10 @@ impl Cpu {
                 instruction.type_name = InstTypeName::Fence;
             }
 
-            _ => println!("decode: unimplemented opcode: {:#09b}", opcode),
+            _ => {
+                instruction.type_data = InstTypeData::Unimp;
+                instruction.type_name = InstTypeName::Unimp;
+            }
         }
         if inst == 0 || inst == 0xc0001073 {
             instruction.type_data = InstTypeData::Unimp;
@@ -873,37 +877,26 @@ impl Cpu {
         self.pc += 4;
     }
 
-    fn run(&mut self, debug: bool) -> i32 {
-        if debug {
-            println!("PC              RAW_INST                INST");
-        }
-        let mut ret: i32 = -1;
+    fn run(&mut self, debug: bool, print_inst: bool) -> i32 {
+        let ret: i32;
         loop {
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
             self.execute(&mut inst);
-            if debug {
+            if print_inst {
                 println!(
                     "{:<08x}:       {:08x}                {}",
                     pc_copy, raw_inst, inst.name
                 );
             }
 
-            if (self.pc as usize) > self.memory.len() {
+            if (self.pc as usize) >= self.memory.len() {
                 if debug {
                     println!("PC overflow.");
                 }
+                ret = -1;
                 break;
-            }
-            match inst.type_name {
-                InstTypeName::Unimp => {
-                    if debug {
-                        println!("Reached an `unimp` instruction.");
-                    }
-                    break;
-                }
-                _ => {}
             }
             match inst.name.as_str() {
                 "ecall" => match self.registers[17] {
@@ -924,9 +917,17 @@ impl Cpu {
                                 self.registers[17],
                             );
                         }
+                        ret = -2;
                         break;
                     }
                 },
+                "unimp" => {
+                    if debug {
+                        println!("Reached an unimp instruction.");
+                        ret = -3;
+                        break;
+                    }
+                }
                 _ => {}
             }
         }
@@ -936,11 +937,21 @@ impl Cpu {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().unwrap_or_else(|| "./tests/addi".into());
+    let mut paths: Vec<String> = Vec::new();
+    match args.next() {
+        Some(path) => paths.push(path),
+        None => {
+            for entry in std::fs::read_dir("./tests/").unwrap() {
+                let path = entry.unwrap().path();
+                paths.push(String::from(path.to_str().unwrap()));
+            }
+        }
+    }
+
     let mut cpu = Cpu::new();
-    cpu.load(&path);
-    let ret = cpu.run(false);
-    if ret != 0 {
-        cpu.run(true);
+    for path in paths {
+        cpu.load(&path);
+        let ret = cpu.run(true, true);
+        println!("{} {}\n", path, ret);
     }
 }

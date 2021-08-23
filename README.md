@@ -9,18 +9,20 @@ Tests are also included in this repo. The tests are built from [riscv-tests](htt
 You need `rust` and `cargo` installed in order to build the emulator.
 ```bash
 $ git clone https://github.com/kiraleos/riscv32i-emulator.git
+$ cd riscv32i-emulator
 $ cargo build --release
+$ mv ./target/release/riscv-emulator ../
 ```
 ## Usage
 ```bash
-$ ./target/release/riscv-emulator <file>
+$ riscv-emulator <file>
 ```
-or
+or, to run every test in the tests directory
 ```bash
-$ cargo run --release <file>
+$ riscv-emulator
 ```
 
 ### Example usage
 ```bash
-$ cargo run --release ./tests/add
+$ riscv-emulator ./tests/add
 ```
