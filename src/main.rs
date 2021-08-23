@@ -732,7 +732,7 @@ impl Cpu {
                         },
                         0b1110011 => {
                             match funct3 {
-                                0x0 => match imm {
+                                0b000 => match imm {
                                     0x0 => {
                                         inst.name = String::from("ecall");
                                     }
@@ -743,6 +743,42 @@ impl Cpu {
                                         inst.name = format!("unknown ecall/ebreak imm: {:#014b}", imm);
                                     }
                                 },
+                                0b001 => {
+                                    inst.name = format!(
+                                        "csrrw   x{},{:#x},x{}",
+                                        rd, imm, rs1
+                                    );
+                                }
+                                0b010 => {
+                                    inst.name = format!(
+                                        "csrrs   x{},{:#x},x{}",
+                                        rd, imm, rs1
+                                    );
+                                }
+                                0b011 => {
+                                    inst.name = format!(
+                                        "csrrc   x{},{:#x},x{}",
+                                        rd, imm, rs1
+                                    );
+                                }
+                                0b101 => {
+                                    inst.name = format!(
+                                        "csrrwi  x{},{:#x},{}",
+                                        rd, imm, rs1
+                                    );
+                                }
+                                0b110 => {
+                                    inst.name = format!(
+                                        "csrrsi  x{},{:#x},{}",
+                                        rd, imm, rs1
+                                    );
+                                }
+                                0b111 => {
+                                    inst.name = format!(
+                                        "csrrci  x{},{:#x},{}",
+                                        rd, imm, rs1
+                                    );
+                                }
                                 _ => {
                                     inst.name = format!("unknown ecall/ebreak funct3: {:#05b}", funct3);
                                 }
@@ -837,9 +873,9 @@ impl Cpu {
         self.pc += 4;
     }
 
-    fn run(&mut self) -> u32 {
+    fn run(&mut self) -> i32 {
         println!("PC              RAW_INST                INST");
-        let mut status_code = 666;
+        let mut status_code: i32 = 666;
         loop {
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
@@ -850,13 +886,15 @@ impl Cpu {
                 pc_copy, raw_inst, inst.name
             );
 
-            if (self.pc as usize) >= self.memory.len() {
-                status_code = std::u32::MAX;
+            if (self.pc as usize) > self.memory.len() {
+                println!("PC overflow.");
+                status_code = -1;
                 break;
             }
             match inst.type_name {
                 InstTypeName::Unimp => {
-                    status_code = std::u32::MAX;
+                    println!("Reached an `unimp` instruction.");
+                    status_code = -1;
                     break;
                 }
                 _ => {}
@@ -868,7 +906,7 @@ impl Cpu {
                             "Program exited with status code: {}",
                             self.registers[10]
                         );
-                        status_code = self.registers[10];
+                        status_code = self.registers[10] as i32;
                         break;
                     }
                     _ => {
@@ -892,5 +930,5 @@ fn main() {
     let mut cpu = Cpu::new();
     cpu.load(&path);
     let status_code = cpu.run();
-    cpu.print_state(false);
+    cpu.print_state(true);
 }
