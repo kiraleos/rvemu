@@ -88,8 +88,6 @@ impl Cpu {
 
     fn load(&mut self, path: &str) {
         let file = std::fs::read(path).unwrap();
-        let text_section: Vec<u32> =
-            file.iter().map(|x| *x as u32).collect();
         let obj = object::File::parse(&*file).unwrap();
         match obj.architecture() {
             object::Architecture::Riscv32 => {
@@ -112,8 +110,8 @@ impl Cpu {
                 panic!("unsupported architecture");
             }
         }
-
-        self.memory[..text_section.len()].copy_from_slice(&text_section);
+        let raw_data: Vec<u32> = file.iter().map(|x| *x as u32).collect();
+        self.memory[..raw_data.len()].copy_from_slice(&raw_data);
     }
 
     #[allow(dead_code)]
