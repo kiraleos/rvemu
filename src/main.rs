@@ -574,7 +574,7 @@ impl Cpu {
                                     as u32;
 
                                 if rd == 0 && rs1 == 0 && imm == 0 {
-                                    inst.name = String::from("nop (addi)");
+                                    inst.name = String::from("nop");
                                 }
                             }
                             0x4 => {
@@ -898,7 +898,7 @@ impl Cpu {
                     };
                 }
             }
-            InstTypeName::Fence => inst.name = String::from("nop (fence)"),
+            InstTypeName::Fence => inst.name = String::from("fence"),
             InstTypeName::Unimp => inst.name = String::from("unimp"),
         }
         self.registers[0] = 0;
@@ -985,9 +985,8 @@ fn main() {
 
     let mut print_flag = false;
     let mut debug_flag = false;
-    let flag = args.next().unwrap_or("".to_string());
-    let flag = flag.as_str();
-    match flag {
+    let flag = args.next().unwrap();
+    match flag.as_str() {
         "-p" => print_flag = true,
         "-d" => debug_flag = true,
         "-pd" => {
