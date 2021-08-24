@@ -695,10 +695,8 @@ impl Cpu {
                                 let index = (self.registers[rs1] as i32
                                     + imm as i32)
                                     as usize;
-                                self.registers[rd] = sign_extend(
-                                    self.memory[index] & 0xffff,
-                                    16,
-                                );
+                                self.registers[rd] =
+                                    sign_extend(self.memory[index], 16);
                             }
                             0x2 => {
                                 inst.name = format!(
@@ -985,10 +983,28 @@ fn main() {
         }
     }
 
+    let mut print_flag = false;
+    let mut debug_flag = false;
+    let flag = args.next().unwrap_or("".to_string());
+    let flag = flag.as_str();
+    match flag {
+        "-p" => print_flag = true,
+        "-d" => debug_flag = true,
+        "-pd" => {
+            debug_flag = true;
+            print_flag = true;
+        }
+        "-dp" => {
+            debug_flag = true;
+            print_flag = true;
+        }
+        _ => {}
+    }
+
     let mut cpu = Cpu::new();
     for path in paths {
         cpu.load(&path);
-        let ret = cpu.run(false, true);
+        let ret = cpu.run(debug_flag, print_flag);
         if ret != 0 {
             println!("{} {}", path, ret);
         }
