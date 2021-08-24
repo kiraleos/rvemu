@@ -115,7 +115,7 @@ impl Cpu {
     }
 
     #[allow(dead_code)]
-    fn print_state(&self, aliases: bool) {
+    fn print_regs(&self, aliases: bool) {
         let mut reg_name;
         for i in 0..self.registers.len() {
             if aliases {
@@ -658,10 +658,10 @@ impl Cpu {
                                         "srai    x{},x{},{:#x}",
                                         rd, rs1, shamt
                                     );
-                                    self.registers[rd] =
-                                        (self.registers[rs1] as i32
-                                            >> shamt)
-                                            as u32;
+                                    self.registers[rd] = sign_extend(
+                                        self.registers[rs1] >> shamt,
+                                        32 - shamt,
+                                    );
                                 }
                                 _ => {
                                     inst.name =
@@ -917,7 +917,9 @@ impl Cpu {
             if print_inst {
                 println!(
                     "{:<08x}:       {:08x}                {}",
-                    pc_copy, raw_inst, inst.name
+                    pc_copy - 0x1000,
+                    raw_inst,
+                    inst.name
                 );
             }
 
