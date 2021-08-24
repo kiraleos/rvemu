@@ -673,10 +673,8 @@ impl Cpu {
                                 let index = (self.registers[rs1] as i32
                                     + imm as i32)
                                     as usize;
-                                self.registers[rd] = sign_extend(
-                                    self.memory[index] & 0xff,
-                                    8,
-                                );
+                                self.registers[rd] =
+                                    sign_extend(self.memory[index], 8);
                             }
                             0x1 => {
                                 inst.name = format!(
@@ -875,8 +873,11 @@ impl Cpu {
                             self.registers[rd] = imm;
                         }
                         0b0010111 => {
-                            inst.name =
-                                format!("auipc   x{},{:#x}", rd, imm);
+                            inst.name = format!(
+                                "auipc   x{},{:#x}",
+                                rd,
+                                imm >> 12
+                            );
                             self.registers[rd] = self.pc + imm;
                         }
                         _ => {
