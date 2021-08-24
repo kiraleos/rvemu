@@ -92,15 +92,17 @@ impl Cpu {
 
     fn load(&mut self, path: &str) {
         let file = std::fs::read(path).unwrap();
-        let obj = object::File::parse(&*file).unwrap();
-        let text_section =
-            obj.section_by_name(".text.init").unwrap().data().unwrap();
         let text_section: Vec<u32> =
-            text_section.iter().map(|x| *x as u32).collect();
-        let text_section = text_section.as_slice();
-        self.memory[..text_section.len()].copy_from_slice(text_section);
+            file.iter().map(|x| *x as u32).collect();
+        // let obj = object::File::parse(&*file).unwrap();
+        // let text_section =
+        //     obj.section_by_name(".text.init").unwrap().data().unwrap();
+        // let text_section: Vec<u32> =
+        //     text_section.iter().map(|x| *x as u32).collect();
+        // let text_section = text_section.as_slice();
+        self.memory[..text_section.len()].copy_from_slice(&text_section);
 
-        self.pc = 0;
+        self.pc = 0x1000;
     }
 
     #[allow(dead_code)]
@@ -558,8 +560,8 @@ impl Cpu {
                                     rd, rs1, imm as i32
                                 );
                                 self.registers[rd] = (self.registers[rs1]
-                                    as i32
-                                    + imm as i32)
+                                    as i32)
+                                    .wrapping_add(imm as i32)
                                     as u32;
 
                                 if rd == 0 && rs1 == 0 && imm == 0 {
@@ -975,7 +977,7 @@ fn main() {
     let mut cpu = Cpu::new();
     for path in paths {
         cpu.load(&path);
-        let ret = cpu.run(true, true);
+        let ret = cpu.run(false, false);
         if ret != 0 {
             println!("{} {}", path, ret);
         }
