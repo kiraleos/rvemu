@@ -1,7 +1,3 @@
-/*
-    Fix imm values not being decoded as negative
-*/
-
 use object::{Object, ObjectSection};
 const MEM_SIZE: usize = 32;
 
@@ -94,15 +90,30 @@ impl Cpu {
         let file = std::fs::read(path).unwrap();
         let text_section: Vec<u32> =
             file.iter().map(|x| *x as u32).collect();
-        // let obj = object::File::parse(&*file).unwrap();
-        // let text_section =
-        //     obj.section_by_name(".text.init").unwrap().data().unwrap();
-        // let text_section: Vec<u32> =
-        //     text_section.iter().map(|x| *x as u32).collect();
-        // let text_section = text_section.as_slice();
-        self.memory[..text_section.len()].copy_from_slice(&text_section);
+        let obj = object::File::parse(&*file).unwrap();
+        match obj.architecture() {
+            object::Architecture::Riscv32 => {
+                match obj.section_by_name(".text") {
+                    Some(section) => {
+                        self.pc = section.file_range().unwrap().0 as u32;
+                    }
+                    None => match obj.section_by_name(".text.init") {
+                        Some(section) => {
+                            self.pc =
+                                section.file_range().unwrap().0 as u32;
+                        }
+                        None => {
+                            panic!("file has no .text section");
+                        }
+                    },
+                }
+            }
+            _ => {
+                panic!("unsupported architecture");
+            }
+        }
 
-        self.pc = 0x1000;
+        self.memory[..text_section.len()].copy_from_slice(&text_section);
     }
 
     #[allow(dead_code)]
@@ -977,7 +988,7 @@ fn main() {
     let mut cpu = Cpu::new();
     for path in paths {
         cpu.load(&path);
-        let ret = cpu.run(false, false);
+        let ret = cpu.run(false, true);
         if ret != 0 {
             println!("{} {}", path, ret);
         }
