@@ -272,7 +272,6 @@ impl Cpu {
             0b0110111 | 0b0010111 => {
                 let rd = ((inst >> 7) & 0b11111) as usize;
                 let imm = (inst >> 12) & 0b11111111111111111111;
-                let imm = imm << 12;
                 instruction.type_data = InstTypeData::U { rd, imm };
                 instruction.type_name = InstTypeName::U;
             }
@@ -879,15 +878,12 @@ impl Cpu {
                         0b0110111 => {
                             inst.name =
                                 format!("lui     x{},{:#x}", rd, imm);
-                            self.registers[rd] = imm;
+                            self.registers[rd] = imm << 12;
                         }
                         0b0010111 => {
-                            inst.name = format!(
-                                "auipc   x{},{:#x}",
-                                rd,
-                                imm >> 12
-                            );
-                            self.registers[rd] = self.pc + imm;
+                            inst.name =
+                                format!("auipc   x{},{:#x}", rd, imm);
+                            self.registers[rd] = self.pc + (imm << 12);
                         }
                         _ => {
                             inst.name = format!(
@@ -930,6 +926,7 @@ impl Cpu {
             }
             match inst.name.as_str() {
                 "ecall" => match self.registers[17] {
+                    // `exit` syscall
                     93 => {
                         if debug {
                             println!(
@@ -985,7 +982,7 @@ fn main() {
 
     let mut print_flag = false;
     let mut debug_flag = false;
-    let flag = args.next().unwrap();
+    let flag = args.next().unwrap_or_default();
     match flag.as_str() {
         "-p" => print_flag = true,
         "-d" => debug_flag = true,
@@ -1004,8 +1001,6 @@ fn main() {
     for path in paths {
         cpu.load(&path);
         let ret = cpu.run(debug_flag, print_flag);
-        if ret != 0 {
-            println!("{} {}", path, ret);
-        }
+        println!("{}\n\texit code: {}", path, ret);
     }
 }
