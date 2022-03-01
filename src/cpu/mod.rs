@@ -850,7 +850,7 @@ impl Cpu {
             self.execute(&mut inst);
             if print_inst {
                 println!(
-                    "{:<08x}:       {:08x}                {}",
+                    "{:<08x}:   {:08x}      {}",
                     pc_copy - 0x1000,
                     raw_inst,
                     inst.name
