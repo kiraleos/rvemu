@@ -1,4 +1,5 @@
 mod cpu;
+mod tests;
 use cpu::Cpu;
 
 fn main() {
@@ -20,11 +21,7 @@ fn main() {
     match flag.as_str() {
         "-p" => print_flag = true,
         "-d" => debug_flag = true,
-        "-pd" => {
-            debug_flag = true;
-            print_flag = true;
-        }
-        "-dp" => {
+        "-pd" | "-dp" => {
             debug_flag = true;
             print_flag = true;
         }
