@@ -40,7 +40,10 @@ impl Cpu {
                 }
             }
             _ => {
-                panic!("unsupported architecture");
+                panic!(
+                    "unsupported architecture: {:#?}",
+                    obj.architecture()
+                );
             }
         }
         let raw_data: Vec<u32> = file.iter().map(|x| *x as u32).collect();
