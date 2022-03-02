@@ -578,7 +578,7 @@ impl Cpu {
                                 self.registers[rd] =
                                     self.registers[rs1] << shamt;
                             }
-                            0x5 => match (imm >> 30) & 0b1 {
+                            0x5 => match (imm >> 5) & 0b1111111 {
                                 0 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
@@ -588,7 +588,7 @@ impl Cpu {
                                     self.registers[rd] =
                                         self.registers[rs1] >> shamt;
                                 }
-                                1 => {
+                                0b0100000 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
                                         "srai    x{},x{},{:#x}",
@@ -683,9 +683,9 @@ impl Cpu {
                                     rd, rs1, imm
                                 );
                                 self.registers[rd] = self.pc + 4;
-                                self.pc = (self.registers[rs1] as i32
-                                    + imm as i32)
-                                    as u32;
+                                self.pc = self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12);
+                                self.pc &= !1; // set lsb to 0
 
                                 self.registers[0] = 0;
                                 return;
