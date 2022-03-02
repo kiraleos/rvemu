@@ -682,10 +682,11 @@ impl Cpu {
                                     "jalr    x{},x{},{:#x}",
                                     rd, rs1, imm
                                 );
-                                self.registers[rd] = self.pc + 4;
+                                let pc_copy = self.pc;
                                 self.pc = self.registers[rs1]
                                     + Cpu::sign_extend(imm, 12);
                                 self.pc &= !1; // set lsb to 0
+                                self.registers[rd] = pc_copy + 4;
 
                                 self.registers[0] = 0;
                                 return;
