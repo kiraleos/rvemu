@@ -15,23 +15,10 @@ fn main() {
         }
     }
 
-    let mut print_flag = false;
-    let mut debug_flag = false;
-    let flag = args.next().unwrap_or_default();
-    match flag.as_str() {
-        "-p" => print_flag = true,
-        "-d" => debug_flag = true,
-        "-pd" | "-dp" => {
-            debug_flag = true;
-            print_flag = true;
-        }
-        _ => {}
-    }
-
     let mut cpu = Cpu::new();
     for path in paths {
         cpu.load(&path);
-        let ret = cpu.run(debug_flag, print_flag);
+        let ret = cpu.run_interactive();
         println!("{}\n\texit code: {}", path, ret);
     }
 }
