@@ -2,7 +2,7 @@ mod instruction;
 use instruction::*;
 use object::{Object, ObjectSection};
 
-const MEM_SIZE: usize = 32;
+const MEM_SIZE: usize = 16;
 
 pub struct Cpu {
     memory: [u32; 1024 * MEM_SIZE],
@@ -95,6 +95,19 @@ impl Cpu {
             } else {
                 reg_name = i.to_string();
                 println!("x{:<2}: 0x{:0>8x}", reg_name, self.registers[i]);
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn print_memory(&self) {
+        for i in (0x1000..self.memory.len()).step_by(4) {
+            let chunk = self.memory[i]
+                | self.memory[i + 1] << 8
+                | self.memory[i + 2] << 16
+                | self.memory[i + 3] << 24;
+            if chunk != 0 {
+                println!("{:#010x}:\t{:#010x}", i - 0x1000, chunk);
             }
         }
     }
@@ -614,10 +627,10 @@ impl Cpu {
                             0x0 => {
                                 inst.name = format!(
                                     "lb      x{},{}(x{})",
-                                    rd, imm, rs1
+                                    rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
                                 self.registers[rd] = Cpu::sign_extend(
                                     self.memory[index],
@@ -629,45 +642,50 @@ impl Cpu {
                                     "lh      x{},{}(x{})",
                                     rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
-                                self.registers[rd] = Cpu::sign_extend(
-                                    self.memory[index],
-                                    16,
-                                );
+                                let half_word = self.memory[index]
+                                    | self.memory[index + 1] << 8;
+                                self.registers[rd] =
+                                    Cpu::sign_extend(half_word, 16);
                             }
                             0x2 => {
                                 inst.name = format!(
                                     "lw      x{},{}(x{})",
                                     rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
-                                self.registers[rd] = self.memory[index];
+
+                                self.registers[rd] = self.memory[index]
+                                    | self.memory[index + 1] << 8
+                                    | self.memory[index + 2] << 16
+                                    | self.memory[index + 3] << 24;
                             }
                             0x4 => {
                                 inst.name = format!(
                                     "lbu     x{},{}(x{})",
                                     rd, imm, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
                                 self.registers[rd] =
-                                    (self.memory[index] & 0xff) as u32;
+                                    self.memory[index] as u32;
                             }
                             0x5 => {
                                 inst.name = format!(
                                     "lhu     x{},{}(x{})",
                                     rd, imm, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
-                                self.registers[rd] =
-                                    (self.memory[index] & 0xffff) as u32;
+
+                                self.registers[rd] = self.memory[index]
+                                    | self.memory[index + 1] << 8;
                             }
                             _ => {
                                 panic!(
@@ -779,30 +797,41 @@ impl Cpu {
                                 "sb      x{},{}(x{})",
                                 rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1] as i32
-                                + imm as i32)
+                            let index = (self.registers[rs1]
+                                + Cpu::sign_extend(imm, 12))
                                 as usize;
-                            self.memory[index] = self.registers[rs2];
+                            self.memory[index] =
+                                self.registers[rs2] & 0xff;
                         }
                         0x1 => {
                             inst.name = format!(
                                 "sh      x{},{}(x{})",
                                 rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1] as i32
-                                + imm as i32)
+                            let index = (self.registers[rs1]
+                                + Cpu::sign_extend(imm, 12))
                                 as usize;
-                            self.memory[index] = self.registers[rs2];
+                            self.memory[index] =
+                                self.registers[rs2] & 0xff;
+                            self.memory[index + 1] =
+                                self.registers[rs2] >> 8 & 0xff;
                         }
                         0x2 => {
                             inst.name = format!(
                                 "sw      x{},{}(x{})",
                                 rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1] as i32
-                                + imm as i32)
+                            let index = (self.registers[rs1]
+                                + Cpu::sign_extend(imm, 12))
                                 as usize;
-                            self.memory[index] = self.registers[rs2];
+                            self.memory[index] =
+                                self.registers[rs2] & 0xff;
+                            self.memory[index + 1] =
+                                self.registers[rs2] >> 8 & 0xff;
+                            self.memory[index + 2] =
+                                self.registers[rs2] >> 16 & 0xff;
+                            self.memory[index + 3] =
+                                self.registers[rs2] >> 24 & 0xff;
                         }
                         _ => {
                             panic!("unknown S funct3: {:#05b}", funct3);
@@ -964,6 +993,7 @@ impl Cpu {
         loop {
             std::io::stdin().read_line(&mut buf).unwrap();
             self.print_regs(false);
+            self.print_memory();
             println!();
 
             let raw_inst = self.fetch();
