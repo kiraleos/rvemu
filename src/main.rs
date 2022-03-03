@@ -11,7 +11,6 @@ fn main() {
             for entry in std::fs::read_dir("./tests/").unwrap() {
                 let path = entry.unwrap().path();
                 if path.extension().unwrap_or_default() != "dump" {
-                    println!("{:?}", path);
                     paths.push(String::from(path.to_str().unwrap()));
                 }
             }
@@ -21,9 +20,9 @@ fn main() {
     let mut cpu = Cpu::new();
     for path in paths {
         cpu.load(&path);
-        // let ret = cpu.run(true, true);
-        let ret = cpu.run_interactive();
-        println!("{}\n\texit code: {}", path, ret);
+        let ret = cpu.run(false, true, false);
+        // let ret = cpu.run_interactive();
+        println!("{}\t\texit code: {}", path, ret);
         // println!("{}", cpu.all_instructions());
     }
 }

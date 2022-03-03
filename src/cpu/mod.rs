@@ -53,7 +53,7 @@ impl Cpu {
     #[allow(dead_code)]
     fn print_regs(&self, aliases: bool) {
         let mut reg_name;
-        println!("pc : 0x{:0>8x}", self.pc - 0x1000);
+        println!("pc : 0x{:0>8x}", self.pc);
         for i in 0..self.registers.len() {
             if aliases {
                 reg_name = match i {
@@ -107,7 +107,7 @@ impl Cpu {
                 | self.memory[i + 2] << 16
                 | self.memory[i + 3] << 24;
             if chunk != 0 {
-                println!("{:#010x}:\t{:#010x}", i - 0x1000, chunk);
+                println!("{:#010x}:\t{:#010x}", i, chunk);
             }
         }
     }
@@ -388,7 +388,7 @@ impl Cpu {
                                 "beq     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                (self.pc - 0x1000) as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -403,7 +403,7 @@ impl Cpu {
                                 "bne     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                (self.pc - 0x1000) as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -418,7 +418,7 @@ impl Cpu {
                                 "blt     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                (self.pc - 0x1000) as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1] as i32;
                             let rhs = self.registers[rs2] as i32;
@@ -433,7 +433,7 @@ impl Cpu {
                                 "bge     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                (self.pc - 0x1000) as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1] as i32;
                             let rhs = self.registers[rs2] as i32;
@@ -448,7 +448,7 @@ impl Cpu {
                                 "bltu    x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                (self.pc - 0x1000) as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -463,7 +463,7 @@ impl Cpu {
                                 "bgeu    x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                (self.pc - 0x1000) as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -869,19 +869,25 @@ impl Cpu {
     }
 
     #[allow(dead_code)]
-    pub fn run(&mut self, debug: bool, print_inst: bool) -> i32 {
+    pub fn run(
+        &mut self,
+        debug: bool,
+        print_inst: bool,
+        print_regs: bool,
+    ) -> i32 {
         let ret: i32;
         loop {
+            if print_regs {
+                self.print_regs(false);
+            }
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
             self.execute(&mut inst);
             if print_inst {
                 println!(
-                    "{:<08x}:   {:08x}      {}",
-                    pc_copy - 0x1000,
-                    raw_inst,
-                    inst.name
+                    "{:<08x}:   {:08x}          	{}",
+                    pc_copy, raw_inst, inst.name
                 );
             }
 
@@ -934,10 +940,8 @@ impl Cpu {
         let raw_inst = self.fetch();
         let inst: Instruction = self.decode(raw_inst);
         format!(
-            "{:<08x}:   {:08x}      {}",
-            self.pc - 0x1000,
-            raw_inst,
-            inst.name
+            "{:<08x}:   {:08x}          	{}",
+            self.pc, raw_inst, inst.name
         )
     }
 
@@ -949,10 +953,8 @@ impl Cpu {
             let pc_copy = self.pc;
             self.execute(&mut inst);
             str += &*format!(
-                "{:<08x}:   {:08x}      {}\n",
-                pc_copy - 0x1000,
-                raw_inst,
-                inst.name
+                "{:<08x}:   {:08x}          	{}\n",
+                pc_copy, raw_inst, inst.name
             );
 
             if inst.name.as_str() == "ecall" {
@@ -985,7 +987,6 @@ impl Cpu {
         self.pc += 4;
     }
 
-    #[allow(dead_code)]
     pub fn run_interactive(&mut self) -> i32 {
         let ret: i32;
 
@@ -993,7 +994,7 @@ impl Cpu {
         loop {
             std::io::stdin().read_line(&mut buf).unwrap();
             self.print_regs(false);
-            self.print_memory();
+            // self.print_memory();
             println!();
 
             let raw_inst = self.fetch();
@@ -1002,10 +1003,8 @@ impl Cpu {
             self.execute(&mut inst);
 
             println!(
-                "{:<08x}:   {:08x}      {}",
-                pc_copy - 0x1000,
-                raw_inst,
-                inst.name
+                "{:<08x}:   {:08x}          	{}",
+                pc_copy, raw_inst, inst.name
             );
 
             if (self.pc as usize) >= self.memory.len() {

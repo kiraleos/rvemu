@@ -7,5 +7,8 @@ edition = "2018"
 [dependencies]
 object = "0.28.3"
 
+[profile.dev]
+overflow-checks = false
+
 [profile.test]
 overflow-checks = false 
