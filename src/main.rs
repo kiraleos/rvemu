@@ -1,7 +1,5 @@
-mod cpu;
-mod tests;
-use cpu::Cpu;
-
+mod emulator;
+use emulator::cpu::Cpu;
 fn main() {
     let mut args = std::env::args().skip(1);
     let mut paths: Vec<String> = Vec::new();
