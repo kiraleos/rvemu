@@ -1,7 +1,8 @@
-#[cfg(test)]
+#[allow(unused_imports)]
+use crate::Cpu;
 #[test]
 fn add() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/add");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -9,7 +10,7 @@ fn add() {
 
 #[test]
 fn addi() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/addi");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -17,7 +18,7 @@ fn addi() {
 
 #[test]
 fn and() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/and");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -25,7 +26,7 @@ fn and() {
 
 #[test]
 fn andi() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/andi");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -33,7 +34,7 @@ fn andi() {
 
 #[test]
 fn auipc() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/auipc");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -41,7 +42,7 @@ fn auipc() {
 
 #[test]
 fn beq() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/beq");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -49,7 +50,7 @@ fn beq() {
 
 #[test]
 fn bge() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/bge");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -57,7 +58,7 @@ fn bge() {
 
 #[test]
 fn bgeu() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/bgeu");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -65,7 +66,7 @@ fn bgeu() {
 
 #[test]
 fn blt() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/blt");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -73,7 +74,7 @@ fn blt() {
 
 #[test]
 fn bltu() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/bltu");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -81,7 +82,7 @@ fn bltu() {
 
 #[test]
 fn bne() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/bne");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -89,7 +90,7 @@ fn bne() {
 
 #[test]
 fn fence_i() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/fence_i");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -97,7 +98,7 @@ fn fence_i() {
 
 #[test]
 fn jal() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/jal");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -105,7 +106,7 @@ fn jal() {
 
 #[test]
 fn jalr() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/jalr");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -113,7 +114,7 @@ fn jalr() {
 
 #[test]
 fn lb() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/lb");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -121,7 +122,7 @@ fn lb() {
 
 #[test]
 fn lbu() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/lbu");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -129,7 +130,7 @@ fn lbu() {
 
 #[test]
 fn lh() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/lh");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -137,7 +138,7 @@ fn lh() {
 
 #[test]
 fn lhu() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/lhu");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -145,7 +146,7 @@ fn lhu() {
 
 #[test]
 fn lui() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/lui");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -153,7 +154,7 @@ fn lui() {
 
 #[test]
 fn lw() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/lw");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -161,7 +162,7 @@ fn lw() {
 
 #[test]
 fn or() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/or");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -169,7 +170,7 @@ fn or() {
 
 #[test]
 fn ori() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/ori");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -177,7 +178,7 @@ fn ori() {
 
 #[test]
 fn sb() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sb");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -185,7 +186,7 @@ fn sb() {
 
 #[test]
 fn sh() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sh");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -193,7 +194,7 @@ fn sh() {
 
 #[test]
 fn simple() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/simple");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -201,7 +202,7 @@ fn simple() {
 
 #[test]
 fn sll() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sll");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -209,7 +210,7 @@ fn sll() {
 
 #[test]
 fn slli() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/slli");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -217,7 +218,7 @@ fn slli() {
 
 #[test]
 fn slt() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/slt");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -225,7 +226,7 @@ fn slt() {
 
 #[test]
 fn slti() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/slti");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -233,7 +234,7 @@ fn slti() {
 
 #[test]
 fn sltiu() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sltiu");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -241,7 +242,7 @@ fn sltiu() {
 
 #[test]
 fn sltu() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sltu");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -249,7 +250,7 @@ fn sltu() {
 
 #[test]
 fn sra() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sra");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -257,7 +258,7 @@ fn sra() {
 
 #[test]
 fn srai() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/srai");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -265,7 +266,7 @@ fn srai() {
 
 #[test]
 fn srl() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/srl");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -273,7 +274,7 @@ fn srl() {
 
 #[test]
 fn srli() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/srli");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -281,7 +282,7 @@ fn srli() {
 
 #[test]
 fn sub() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sub");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -289,7 +290,7 @@ fn sub() {
 
 #[test]
 fn sw() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/sw");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -297,7 +298,7 @@ fn sw() {
 
 #[test]
 fn xor() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/xor");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
@@ -305,7 +306,7 @@ fn xor() {
 
 #[test]
 fn xori() {
-    let mut cpu = crate::cpu::Cpu::new();
+    let mut cpu = Cpu::new();
     cpu.load("./tests/xori");
     let ret = cpu.run(false, false, false);
     assert_eq!(ret, 0);
