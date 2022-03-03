@@ -4,7 +4,7 @@ Made entirely to learn how to write an emulator and gain experience with Rust.
 
 At this moment, this emulator has only been tested on the provided test binaries, but any file compiled for 32bit little-endian RISC-V should work. Also, only the `exit` syscall is implemented.
 
-Tests are included in this repo. The tests are built from [riscv-tests](https://github.com/riscv/riscv-tests).
+The pre-compiled test binaries are included in this repo. The tests are built from [riscv-tests](https://github.com/riscv/riscv-tests).
 ## Build & Run
 You need `rust` and `cargo` installed in order to build the emulator.
 ```bash

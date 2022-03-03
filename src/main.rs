@@ -10,28 +10,19 @@ fn main() {
         None => {
             for entry in std::fs::read_dir("./tests/").unwrap() {
                 let path = entry.unwrap().path();
-                paths.push(String::from(path.to_str().unwrap()));
+                if path.extension().unwrap_or_default() != "dump" {
+                    paths.push(String::from(path.to_str().unwrap()));
+                }
             }
         }
-    }
-
-    let mut print_flag = false;
-    let mut debug_flag = false;
-    let flag = args.next().unwrap_or_default();
-    match flag.as_str() {
-        "-p" => print_flag = true,
-        "-d" => debug_flag = true,
-        "-pd" | "-dp" => {
-            debug_flag = true;
-            print_flag = true;
-        }
-        _ => {}
     }
 
     let mut cpu = Cpu::new();
     for path in paths {
         cpu.load(&path);
-        let ret = cpu.run(debug_flag, print_flag);
-        println!("{}\n\texit code: {}", path, ret);
+        let ret = cpu.run(false, true, false);
+        // let ret = cpu.run_interactive();
+        println!("{}\t\texit code: {}", path, ret);
+        // println!("{}", cpu.all_instructions());
     }
 }

@@ -2,7 +2,7 @@ mod instruction;
 use instruction::*;
 use object::{Object, ObjectSection};
 
-const MEM_SIZE: usize = 32;
+const MEM_SIZE: usize = 16;
 
 pub struct Cpu {
     memory: [u32; 1024 * MEM_SIZE],
@@ -53,6 +53,7 @@ impl Cpu {
     #[allow(dead_code)]
     fn print_regs(&self, aliases: bool) {
         let mut reg_name;
+        println!("pc : 0x{:0>8x}", self.pc);
         for i in 0..self.registers.len() {
             if aliases {
                 reg_name = match i {
@@ -93,7 +94,20 @@ impl Cpu {
                 println!("{:>3}: 0x{:0>8x}", reg_name, self.registers[i]);
             } else {
                 reg_name = i.to_string();
-                println!("{:>2}: 0x{:0>8x}", reg_name, self.registers[i]);
+                println!("x{:<2}: 0x{:0>8x}", reg_name, self.registers[i]);
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn print_memory(&self) {
+        for i in (0x1000..self.memory.len()).step_by(4) {
+            let chunk = self.memory[i]
+                | self.memory[i + 1] << 8
+                | self.memory[i + 2] << 16
+                | self.memory[i + 3] << 24;
+            if chunk != 0 {
+                println!("{:#010x}:\t{:#010x}", i, chunk);
             }
         }
     }
@@ -260,8 +274,8 @@ impl Cpu {
                                     .wrapping_sub(self.registers[rs2]);
                             }
                             _ => {
-                                inst.name = format!(
-                                    "unimplemented R funct7: {:#09b}",
+                                panic!(
+                                    "unknown R funct7: {:#09b}",
                                     funct7
                                 );
                             }
@@ -318,8 +332,8 @@ impl Cpu {
                                     as u32;
                             }
                             _ => {
-                                inst.name = format!(
-                                    "unimplemented R funct7: {:#09b}",
+                                panic!(
+                                    "unknown R funct7: {:#09b}",
                                     funct7
                                 );
                             }
@@ -352,7 +366,7 @@ impl Cpu {
                             }
                         }
                         _ => {
-                            inst.name = format!(
+                            panic!(
                                 "execute: unimplemented R funct3: {:#05b}",
                                 funct3
                             );
@@ -374,7 +388,7 @@ impl Cpu {
                                 "beq     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                self.pc as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -389,7 +403,7 @@ impl Cpu {
                                 "bne     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                self.pc as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -404,7 +418,7 @@ impl Cpu {
                                 "blt     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                self.pc as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1] as i32;
                             let rhs = self.registers[rs2] as i32;
@@ -419,7 +433,7 @@ impl Cpu {
                                 "bge     x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                self.pc as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1] as i32;
                             let rhs = self.registers[rs2] as i32;
@@ -434,7 +448,7 @@ impl Cpu {
                                 "bltu    x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                self.pc as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -449,7 +463,7 @@ impl Cpu {
                                 "bgeu    x{},x{},{:08x}",
                                 rs1,
                                 rs2,
-                                self.pc as i32 + imm as i32
+                                (self.pc) as i32 + imm as i32
                             );
                             let lhs = self.registers[rs1];
                             let rhs = self.registers[rs2];
@@ -460,7 +474,7 @@ impl Cpu {
                             };
                         }
                         _ => {
-                            inst.name = format!(
+                            panic!(
                                 "execute: unimplemented B funct3: {:#05b}",
                                 funct3
                             );
@@ -480,7 +494,7 @@ impl Cpu {
                             return;
                         }
                         _ => {
-                            inst.name = format!(
+                            panic!(
                                 "execute: unimplemented J opcode: {:#09b}",
                                 inst.opcode
                             );
@@ -577,7 +591,7 @@ impl Cpu {
                                 self.registers[rd] =
                                     self.registers[rs1] << shamt;
                             }
-                            0x5 => match (imm >> 30) & 0b1 {
+                            0x5 => match (imm >> 5) & 0b1111111 {
                                 0 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
@@ -587,7 +601,7 @@ impl Cpu {
                                     self.registers[rd] =
                                         self.registers[rs1] >> shamt;
                                 }
-                                1 => {
+                                0b0100000 => {
                                     let shamt = imm & 0b11111;
                                     inst.name = format!(
                                         "srai    x{},x{},{:#x}",
@@ -599,14 +613,13 @@ impl Cpu {
                                     );
                                 }
                                 _ => {
-                                    inst.name = "should never be here."
-                                        .to_string();
+                                    panic!("should never be here.")
                                 }
                             },
                             _ => {
-                                inst.name = format!(
-                                    "execute: unimplemented I funct3: {:#05b}",
-                                    funct3
+                                panic!(
+                                    "unknown I funct3: {:#05b}",
+                                    funct3,
                                 );
                             }
                         },
@@ -614,10 +627,10 @@ impl Cpu {
                             0x0 => {
                                 inst.name = format!(
                                     "lb      x{},{}(x{})",
-                                    rd, imm, rs1
+                                    rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
                                 self.registers[rd] = Cpu::sign_extend(
                                     self.memory[index],
@@ -627,51 +640,56 @@ impl Cpu {
                             0x1 => {
                                 inst.name = format!(
                                     "lh      x{},{}(x{})",
-                                    rd, imm, rs1
+                                    rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
-                                self.registers[rd] = Cpu::sign_extend(
-                                    self.memory[index],
-                                    16,
-                                );
+                                let half_word = self.memory[index]
+                                    | self.memory[index + 1] << 8;
+                                self.registers[rd] =
+                                    Cpu::sign_extend(half_word, 16);
                             }
                             0x2 => {
                                 inst.name = format!(
                                     "lw      x{},{}(x{})",
-                                    rd, imm, rs1
+                                    rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
-                                self.registers[rd] = self.memory[index];
+
+                                self.registers[rd] = self.memory[index]
+                                    | self.memory[index + 1] << 8
+                                    | self.memory[index + 2] << 16
+                                    | self.memory[index + 3] << 24;
                             }
                             0x4 => {
                                 inst.name = format!(
                                     "lbu     x{},{}(x{})",
                                     rd, imm, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
                                 self.registers[rd] =
-                                    (self.memory[index] & 0xff) as u32;
+                                    self.memory[index] as u32;
                             }
                             0x5 => {
                                 inst.name = format!(
                                     "lhu     x{},{}(x{})",
                                     rd, imm, rs1
                                 );
-                                let index = (self.registers[rs1] as i32
-                                    + imm as i32)
+                                let index = (self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12))
                                     as usize;
-                                self.registers[rd] =
-                                    (self.memory[index] & 0xffff) as u32;
+
+                                self.registers[rd] = self.memory[index]
+                                    | self.memory[index + 1] << 8;
                             }
                             _ => {
-                                inst.name = format!(
-                                    "execute: unimplemented I funct3: {:#05b}",
+                                panic!(
+                                    "unknown I funct3: {:#05b}",
                                     funct3
                                 );
                             }
@@ -682,17 +700,18 @@ impl Cpu {
                                     "jalr    x{},x{},{:#x}",
                                     rd, rs1, imm
                                 );
-                                self.registers[rd] = self.pc + 4;
-                                self.pc = (self.registers[rs1] as i32
-                                    + imm as i32)
-                                    as u32;
+                                let pc_copy = self.pc;
+                                self.pc = self.registers[rs1]
+                                    + Cpu::sign_extend(imm, 12);
+                                self.pc &= !1; // set lsb to 0
+                                self.registers[rd] = pc_copy + 4;
 
                                 self.registers[0] = 0;
                                 return;
                             }
                             _ => {
-                                inst.name = format!(
-                                    "execute: unimplemented I funct3: {:#05b}",
+                                panic!(
+                                    "unknown I funct3: {:#05b}",
                                     funct3
                                 );
                             }
@@ -705,11 +724,11 @@ impl Cpu {
                                 0x1 => {
                                     inst.name = String::from("ebreak");
                                 }
+                                0b1100000010 => {
+                                    inst.name = String::from("mret");
+                                }
                                 _ => {
-                                    inst.name = format!(
-                                        "unknown ecall/ebreak imm: {:#014b}",
-                                        imm
-                                    );
+                                    panic!("unknown I imm: {:#014b}", imm)
                                 }
                             },
                             0b001 => {
@@ -749,15 +768,15 @@ impl Cpu {
                                 );
                             }
                             _ => {
-                                inst.name = format!(
-                                    "unknown ecall/ebreak funct3: {:#05b}",
+                                panic!(
+                                    "unknown I funct3: {:#05b}",
                                     funct3
                                 );
                             }
                         },
                         _ => {
-                            inst.name = format!(
-                                "execute: unimplemented I opcode: {:#09b}",
+                            panic!(
+                                "unknown I opcode: {:#09b}",
                                 inst.opcode
                             );
                         }
@@ -776,38 +795,46 @@ impl Cpu {
                         0x0 => {
                             inst.name = format!(
                                 "sb      x{},{}(x{})",
-                                rs2, imm, rs1
+                                rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1] as i32
-                                + imm as i32)
+                            let index = (self.registers[rs1]
+                                + Cpu::sign_extend(imm, 12))
                                 as usize;
-                            self.memory[index] = self.registers[rs2];
+                            self.memory[index] =
+                                self.registers[rs2] & 0xff;
                         }
                         0x1 => {
                             inst.name = format!(
                                 "sh      x{},{}(x{})",
-                                rs2, imm, rs1
+                                rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1] as i32
-                                + imm as i32)
+                            let index = (self.registers[rs1]
+                                + Cpu::sign_extend(imm, 12))
                                 as usize;
-                            self.memory[index] = self.registers[rs2];
+                            self.memory[index] =
+                                self.registers[rs2] & 0xff;
+                            self.memory[index + 1] =
+                                self.registers[rs2] >> 8 & 0xff;
                         }
                         0x2 => {
                             inst.name = format!(
                                 "sw      x{},{}(x{})",
-                                rs2, imm, rs1
+                                rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1] as i32
-                                + imm as i32)
+                            let index = (self.registers[rs1]
+                                + Cpu::sign_extend(imm, 12))
                                 as usize;
-                            self.memory[index] = self.registers[rs2];
+                            self.memory[index] =
+                                self.registers[rs2] & 0xff;
+                            self.memory[index + 1] =
+                                self.registers[rs2] >> 8 & 0xff;
+                            self.memory[index + 2] =
+                                self.registers[rs2] >> 16 & 0xff;
+                            self.memory[index + 3] =
+                                self.registers[rs2] >> 24 & 0xff;
                         }
                         _ => {
-                            inst.name = format!(
-                                "execute: unimplemented S funct3: {:#05b}",
-                                funct3
-                            );
+                            panic!("unknown S funct3: {:#05b}", funct3);
                         }
                     };
                 }
@@ -826,8 +853,8 @@ impl Cpu {
                             self.registers[rd] = self.pc + (imm << 12);
                         }
                         _ => {
-                            inst.name = format!(
-                                "execute: unimplemented U opcode: {:#09b}",
+                            panic!(
+                                "unknown U opcode: {:#09b}",
                                 inst.opcode
                             );
                         }
@@ -841,19 +868,26 @@ impl Cpu {
         self.pc += 4;
     }
 
-    pub fn run(&mut self, debug: bool, print_inst: bool) -> i32 {
+    #[allow(dead_code)]
+    pub fn run(
+        &mut self,
+        debug: bool,
+        print_inst: bool,
+        print_regs: bool,
+    ) -> i32 {
         let ret: i32;
         loop {
+            if print_regs {
+                self.print_regs(false);
+            }
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
             self.execute(&mut inst);
             if print_inst {
                 println!(
-                    "{:<08x}:   {:08x}      {}",
-                    pc_copy - 0x1000,
-                    raw_inst,
-                    inst.name
+                    "{:<08x}:   {:08x}          	{}",
+                    pc_copy, raw_inst, inst.name
                 );
             }
 
@@ -892,6 +926,114 @@ impl Cpu {
                     if debug {
                         println!("Reached an unimp instruction.");
                     }
+                    ret = -3;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        ret
+    }
+
+    #[allow(dead_code)]
+    pub fn current_instruction(&self) -> String {
+        let raw_inst = self.fetch();
+        let inst: Instruction = self.decode(raw_inst);
+        format!(
+            "{:<08x}:   {:08x}          	{}",
+            self.pc, raw_inst, inst.name
+        )
+    }
+
+    pub fn all_instructions(&mut self) -> String {
+        let mut str = String::new();
+        loop {
+            let raw_inst = self.fetch();
+            let mut inst: Instruction = self.decode(raw_inst);
+            let pc_copy = self.pc;
+            self.execute(&mut inst);
+            str += &*format!(
+                "{:<08x}:   {:08x}          	{}\n",
+                pc_copy, raw_inst, inst.name
+            );
+
+            if inst.name.as_str() == "ecall" {
+                match self.registers[17] {
+                    // `exit` syscall
+                    93 => {
+                        break;
+                    }
+                    _ => {
+                        panic!("unknown syscall");
+                    }
+                }
+            }
+        }
+        self.reset_registers();
+        str
+    }
+
+    fn reset_registers(&mut self) {
+        for reg in &mut self.registers {
+            *reg = 0;
+        }
+        self.pc = 0;
+    }
+
+    pub fn execute_at_pc(&mut self) {
+        let raw_inst = self.fetch();
+        let mut inst: Instruction = self.decode(raw_inst);
+        self.execute(&mut inst);
+        self.pc += 4;
+    }
+
+    pub fn run_interactive(&mut self) -> i32 {
+        let ret: i32;
+
+        let mut buf = String::new();
+        loop {
+            std::io::stdin().read_line(&mut buf).unwrap();
+            self.print_regs(false);
+            // self.print_memory();
+            println!();
+
+            let raw_inst = self.fetch();
+            let mut inst: Instruction = self.decode(raw_inst);
+            let pc_copy = self.pc;
+            self.execute(&mut inst);
+
+            println!(
+                "{:<08x}:   {:08x}          	{}",
+                pc_copy, raw_inst, inst.name
+            );
+
+            if (self.pc as usize) >= self.memory.len() {
+                println!("PC overflow.");
+                ret = -1;
+                break;
+            }
+            match inst.name.as_str() {
+                "ecall" => match self.registers[17] {
+                    // `exit` syscall
+                    93 => {
+                        println!(
+                            "Program exited with status code: {}",
+                            self.registers[10]
+                        );
+                        ret = self.registers[10] as i32;
+                        break;
+                    }
+                    _ => {
+                        println!(
+                            "Unimplemented ECALL: {}",
+                            self.registers[17],
+                        );
+                        ret = -2;
+                        break;
+                    }
+                },
+                "unimp" => {
+                    println!("Reached an unimp instruction.");
                     ret = -3;
                     break;
                 }
