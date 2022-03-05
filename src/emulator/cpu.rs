@@ -50,13 +50,14 @@ impl Cpu {
     }
 
     #[allow(dead_code)]
-    fn print_regs(&self, aliases: bool) {
+    pub fn print_registers(&self, aliases: bool) {
         let mut reg_name;
         println!("pc : 0x{:0>8x}", self.pc);
+        let mut strbuilder = String::new();
         for i in 0..self.registers.len() {
             if aliases {
                 reg_name = match i {
-                    0 => "x0".to_string(),
+                    0 => "zero".to_string(),
                     1 => "ra".to_string(),
                     2 => "sp".to_string(),
                     3 => "gp".to_string(),
@@ -88,14 +89,24 @@ impl Cpu {
                     29 => "t4".to_string(),
                     30 => "t5".to_string(),
                     31 => "t6".to_string(),
-                    _ => "error".to_string(),
+                    _ => panic!("should never be here"),
                 };
-                println!("{:>3}: 0x{:0>8x}", reg_name, self.registers[i]);
+                strbuilder += &*format!(
+                    "{:>4}: 0x{:0>8x}  ",
+                    reg_name, self.registers[i]
+                );
             } else {
-                reg_name = i.to_string();
-                println!("x{:<2}: 0x{:0>8x}", reg_name, self.registers[i]);
+                reg_name = String::from("x") + &i.to_string();
+                strbuilder += &*format!(
+                    "{:>3}: 0x{:0>8x}    ",
+                    reg_name, self.registers[i]
+                );
+            }
+            if (i + 1) % 4 == 0 {
+                strbuilder += "\n";
             }
         }
+        println!("{}", strbuilder);
     }
 
     #[allow(dead_code)]
@@ -867,17 +878,26 @@ impl Cpu {
         self.pc += 4;
     }
 
-    #[allow(dead_code)]
     pub fn run(
         &mut self,
         debug: bool,
         print_inst: bool,
         print_regs: bool,
+        pc: Option<usize>,
+        aliases: bool,
+        interactive: bool,
     ) -> i32 {
         let ret: i32;
+        if let Some(pc) = pc {
+            self.pc = pc as u32;
+        }
         loop {
+            let mut buf = String::new();
+            if interactive {
+                std::io::stdin().read_line(&mut buf).unwrap();
+            }
             if print_regs {
-                self.print_regs(false);
+                self.print_registers(aliases);
             }
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
@@ -901,13 +921,8 @@ impl Cpu {
                 "ecall" => match self.registers[17] {
                     // `exit` syscall
                     93 => {
-                        if debug {
-                            println!(
-                                "Program exited with status code: {}",
-                                self.registers[10]
-                            );
-                        }
                         ret = self.registers[10] as i32;
+                        println!("Program exited with exit code: {}", ret);
                         break;
                     }
                     _ => {
@@ -984,62 +999,6 @@ impl Cpu {
         let mut inst: Instruction = self.decode(raw_inst);
         self.execute(&mut inst);
         self.pc += 4;
-    }
-
-    pub fn run_interactive(&mut self) -> i32 {
-        let ret: i32;
-
-        let mut buf = String::new();
-        loop {
-            std::io::stdin().read_line(&mut buf).unwrap();
-            self.print_regs(false);
-            // self.print_memory();
-            println!();
-
-            let raw_inst = self.fetch();
-            let mut inst: Instruction = self.decode(raw_inst);
-            let pc_copy = self.pc;
-            self.execute(&mut inst);
-
-            println!(
-                "{:<08x}:   {:08x}          	{}",
-                pc_copy, raw_inst, inst.name
-            );
-
-            if (self.pc as usize) >= self.memory.len() {
-                println!("PC overflow.");
-                ret = -1;
-                break;
-            }
-            match inst.name.as_str() {
-                "ecall" => match self.registers[17] {
-                    // `exit` syscall
-                    93 => {
-                        println!(
-                            "Program exited with status code: {}",
-                            self.registers[10]
-                        );
-                        ret = self.registers[10] as i32;
-                        break;
-                    }
-                    _ => {
-                        println!(
-                            "Unimplemented ECALL: {}",
-                            self.registers[17],
-                        );
-                        ret = -2;
-                        break;
-                    }
-                },
-                "unimp" => {
-                    println!("Reached an unimp instruction.");
-                    ret = -3;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        ret
     }
 
     fn sign_extend(data: u32, size: u32) -> u32 {
