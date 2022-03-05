@@ -883,13 +883,13 @@ impl Cpu {
         debug: bool,
         print_inst: bool,
         print_regs: bool,
-        pc: Option<usize>,
+        pc: Option<String>,
         aliases: bool,
         interactive: bool,
     ) -> i32 {
         let ret: i32;
         if let Some(pc) = pc {
-            self.pc = pc as u32;
+            self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
         }
         loop {
             let mut buf = String::new();

@@ -28,9 +28,9 @@ struct Args {
     #[clap(short, long)]
     interactive: bool,
 
-    /// Custom program counter start address in hex
-    #[clap(short, long)]
-    pc: Option<usize>,
+    /// Override ELF entry point
+    #[clap(long, value_name = "address")]
+    pc: Option<String>,
 }
 fn main() {
     let args = Args::parse();
@@ -51,4 +51,9 @@ fn main() {
         args.aliases,
         args.interactive,
     );
+
+    // TODO
+    // add commands to interactive mode
+    //      1. `mem <addr>` to show memory
+    //      2. `reg <reg> <value>` to set a register's value
 }
