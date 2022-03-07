@@ -32,15 +32,17 @@ USAGE:
     riscv-emulator [OPTIONS] --file <FILE>
 
 OPTIONS:
-    -a, --aliases        Show register ABI names or numeric values (x0-x31) Use with the
-                         `--registers` option
-    -d, --debug          Print instructions as they are executed
-    -f, --file <FILE>    The path of the file to be executed
-    -h, --help           Print help information
-    -i, --interactive    Interactive mode. Use with either `--registers` and/or `--debug`
-    -p, --pc <PC>        Custom program counter start address in hex
-    -r, --registers      Show register values after each instruction
-    -V, --version        Print version information
+    -a, --aliases         Show register ABI names or numeric values (x0-x31) Use with the
+                          `--registers` option
+    -d, --debug           Print instructions as they are executed
+    -f, --file <FILE>     The path of the file to be executed
+    -h, --help            Print help information
+    -i, --interactive     Interactive mode. Use with either `--registers` and/or `--debug`
+        --pc <address>    Override ELF entry point
+    -r, --registers       Show register values after each instruction
+    -s, --stack           Provide a stack of "infinite" size. This sets the stack pointer before
+                          execution, so it might cause undefined behaviour
+    -V, --version         Print version information
 ```
 ## Example
 ```
