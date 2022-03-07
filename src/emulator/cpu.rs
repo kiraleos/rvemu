@@ -47,7 +47,6 @@ impl Cpu {
         self.memory[..raw_data.len()].copy_from_slice(&raw_data);
     }
 
-    #[allow(dead_code)]
     pub fn print_registers(&self, aliases: bool) {
         let mut reg_name;
         println!("pc : 0x{:0>8x}", self.pc);
@@ -107,7 +106,6 @@ impl Cpu {
         println!("{}", strbuilder);
     }
 
-    #[allow(dead_code)]
     pub fn print_memory(&self) {
         for i in (0x1000..self.memory.len()).step_by(4) {
             let chunk = self.memory[i]
@@ -876,6 +874,7 @@ impl Cpu {
         self.pc += 4;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         &mut self,
         debug: bool,
@@ -884,10 +883,14 @@ impl Cpu {
         pc: Option<String>,
         aliases: bool,
         interactive: bool,
+        stack: bool,
     ) -> i32 {
         let ret: i32;
         if let Some(pc) = pc {
             self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
+        }
+        if stack {
+            self.registers[2] = (self.memory.len() - 1) as u32;
         }
         loop {
             let mut buf = String::new();
@@ -947,7 +950,6 @@ impl Cpu {
         ret
     }
 
-    #[allow(dead_code)]
     pub fn current_instruction(&self) -> String {
         let raw_inst = self.fetch();
         let inst: Instruction = self.decode(raw_inst);

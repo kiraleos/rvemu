@@ -31,6 +31,11 @@ struct Args {
     /// Override ELF entry point
     #[clap(long, value_name = "address")]
     pc: Option<String>,
+
+    /// Provide a stack of "infinite" size.
+    /// This sets the stack pointer before execution, so it might cause undefined behaviour.
+    #[clap(short, long)]
+    stack: bool,
 }
 fn main() {
     let args = Args::parse();
@@ -50,10 +55,13 @@ fn main() {
         args.pc,
         args.aliases,
         args.interactive,
+        args.stack,
     );
 
     // TODO
     // add commands to interactive mode
     //      1. `mem <addr|range>` to show a memory location
-    //      2. `set <reg> <value>` to set a register's value
+    //      2. `reg <x> to show a single register's value`
+    //      3. `regset <reg> <value>` to set a register's value
+    //      4. `memset <addr> <value>` to set a memory location's value
 }
