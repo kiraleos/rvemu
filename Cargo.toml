@@ -6,7 +6,7 @@ author = "Apostolos Kiraleos"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-object = "0.28.3"
+elf_rs = "0.2.0"
 clap = {version="3.1.5", features=["derive"]}
 
 [profile.dev]

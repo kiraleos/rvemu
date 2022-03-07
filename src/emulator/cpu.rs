@@ -1,5 +1,6 @@
 use super::instruction::*;
-use object::{Object, ObjectSection};
+use elf_rs::{Elf, ElfFile};
+use std::io::Read;
 
 const MEM_SIZE: usize = 16;
 
@@ -19,33 +20,30 @@ impl Cpu {
     }
 
     pub fn load(&mut self, path: &str) {
-        let file = std::fs::read(path).unwrap();
-        let obj = object::File::parse(&*file).unwrap();
-        match obj.architecture() {
-            object::Architecture::Riscv32 => {
-                match obj.section_by_name(".text") {
-                    Some(section) => {
-                        self.pc = section.file_range().unwrap().0 as u32;
-                    }
-                    None => match obj.section_by_name(".text.init") {
-                        Some(section) => {
-                            self.pc =
-                                section.file_range().unwrap().0 as u32;
-                        }
-                        None => {
-                            panic!("file has no .text section");
-                        }
-                    },
-                }
+        let mut elf_file =
+            std::fs::File::open(path).expect("open file failed");
+        let mut elf_buf = Vec::<u8>::new();
+        elf_file
+            .read_to_end(&mut elf_buf)
+            .expect("read file failed");
+        let elf = Elf::from_bytes(&elf_buf).expect("load elf file failed");
+        match elf.elf_header().machine() {
+            elf_rs::ElfMachine::RISC_V => {
+                let p_vaddr = elf.program_header_nth(0).unwrap().vaddr();
+                let p_offset = elf.program_header_nth(0).unwrap().offset();
+                self.pc = (elf.entry_point() - p_vaddr + p_offset)
+                    .try_into()
+                    .expect("couldn't convert u64 entry addr to u32");
             }
             _ => {
                 panic!(
                     "unsupported architecture: {:#?}",
-                    obj.architecture()
+                    elf.elf_header().machine()
                 );
             }
         }
-        let raw_data: Vec<u32> = file.iter().map(|x| *x as u32).collect();
+        let raw_data: Vec<u32> =
+            elf_buf.into_iter().map(|x| x as u32).collect();
         self.memory[..raw_data.len()].copy_from_slice(&raw_data);
     }
 

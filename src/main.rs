@@ -54,6 +54,6 @@ fn main() {
 
     // TODO
     // add commands to interactive mode
-    //      1. `mem <addr>` to show memory
-    //      2. `reg <reg> <value>` to set a register's value
+    //      1. `mem <addr|range>` to show a memory location
+    //      2. `set <reg> <value>` to set a register's value
 }
