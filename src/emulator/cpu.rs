@@ -26,7 +26,8 @@ impl Cpu {
         elf_file
             .read_to_end(&mut elf_buf)
             .expect("read file failed");
-        let elf = Elf::from_bytes(&elf_buf).expect("load elf file failed");
+        let elf = Elf::from_bytes(&elf_buf)
+            .expect("Are you sure this is an ELF file?");
         match elf.elf_header().machine() {
             elf_rs::ElfMachine::RISC_V => {
                 let p_vaddr = elf.program_header_nth(0).unwrap().vaddr();
@@ -49,7 +50,7 @@ impl Cpu {
 
     pub fn print_registers(&self, aliases: bool) {
         let mut reg_name;
-        println!("pc : 0x{:0>8x}", self.pc);
+        println!(" pc: 0x{:0>8x}", self.pc);
         let mut strbuilder = String::new();
         for i in 0..self.registers.len() {
             if aliases {
