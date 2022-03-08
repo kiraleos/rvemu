@@ -8,7 +8,7 @@ use emulator::cpu::Cpu;
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// The path of the file to be executed
-    #[clap(short, long, parse(from_os_str), value_name = "FILE")]
+    #[clap(parse(from_os_str), value_name = "FILE")]
     file: std::path::PathBuf,
 
     /// Print instructions as they are executed
