@@ -29,13 +29,15 @@ to run the unit tests.
 ## Usage
 ```
 USAGE:
-    riscv-emulator [OPTIONS] --file <FILE>
+    riscv-emulator [OPTIONS] <FILE>
+
+ARGS:
+    <FILE>    The path of the file to be executed
 
 OPTIONS:
     -a, --aliases         Show register ABI names or numeric values (x0-x31) Use with the
                           `--registers` option
     -d, --debug           Print instructions as they are executed
-    -f, --file <FILE>     The path of the file to be executed
     -h, --help            Print help information
     -i, --interactive     Interactive mode. Use with either `--registers` and/or `--debug`
         --pc <address>    Override ELF entry point
