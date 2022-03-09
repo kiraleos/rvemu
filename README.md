@@ -18,7 +18,7 @@ You need `rust` and `cargo` installed in order to build the emulator.
 ```
 $ git clone https://github.com/kiraleos/riscv32i-emulator.git
 $ cd riscv32i-emulator
-$ cargo run -f ./tests/<file>
+$ cargo run ./tests/<file>
 ```
 or
 ```

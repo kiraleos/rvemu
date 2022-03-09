@@ -5,7 +5,7 @@ use std::io::Read;
 const MEM_SIZE: usize = 16;
 
 pub struct Cpu {
-    memory: [u32; 1024 * MEM_SIZE],
+    memory: [u8; 1024 * MEM_SIZE],
     registers: [u32; 32],
     pc: u32,
 }
@@ -43,8 +43,7 @@ impl Cpu {
                 );
             }
         }
-        let raw_data: Vec<u32> =
-            elf_buf.into_iter().map(|x| x as u32).collect();
+        let raw_data: Vec<u8> = elf_buf.into_iter().collect();
         self.memory[..raw_data.len()].copy_from_slice(&raw_data);
     }
 
@@ -109,10 +108,10 @@ impl Cpu {
 
     pub fn print_memory(&self) {
         for i in (0x1000..self.memory.len()).step_by(4) {
-            let chunk = self.memory[i]
-                | self.memory[i + 1] << 8
-                | self.memory[i + 2] << 16
-                | self.memory[i + 3] << 24;
+            let chunk = self.memory[i] as u32
+                | (self.memory[i + 1] as u32) << 8
+                | (self.memory[i + 2] as u32) << 16
+                | (self.memory[i + 3] as u32) << 24;
             if chunk != 0 {
                 println!("{:#010x}:\t{:#010x}", i, chunk);
             }
@@ -121,10 +120,10 @@ impl Cpu {
 
     fn fetch(&self) -> u32 {
         let index = self.pc as usize;
-        self.memory[index]
-            | self.memory[index + 1] << 8
-            | self.memory[index + 2] << 16
-            | self.memory[index + 3] << 24
+        self.memory[index] as u32
+            | ((self.memory[index + 1]) as u32) << 8
+            | ((self.memory[index + 2]) as u32) << 16
+            | ((self.memory[index + 3]) as u32) << 24
     }
 
     fn decode(&self, inst: u32) -> Instruction {
@@ -640,7 +639,7 @@ impl Cpu {
                                     + Cpu::sign_extend(imm, 12))
                                     as usize;
                                 self.registers[rd] = Cpu::sign_extend(
-                                    self.memory[index],
+                                    self.memory[index] as u32,
                                     8,
                                 );
                             }
@@ -652,10 +651,10 @@ impl Cpu {
                                 let index = (self.registers[rs1]
                                     + Cpu::sign_extend(imm, 12))
                                     as usize;
-                                let half_word = self.memory[index]
-                                    | self.memory[index + 1] << 8;
+                                let half_word = self.memory[index] as u32
+                                    | (self.memory[index + 1] as u32) << 8;
                                 self.registers[rd] =
-                                    Cpu::sign_extend(half_word, 16);
+                                    Cpu::sign_extend(half_word as u32, 16);
                             }
                             0x2 => {
                                 inst.name = format!(
@@ -667,9 +666,13 @@ impl Cpu {
                                     as usize;
 
                                 self.registers[rd] = self.memory[index]
-                                    | self.memory[index + 1] << 8
-                                    | self.memory[index + 2] << 16
-                                    | self.memory[index + 3] << 24;
+                                    as u32
+                                    | ((self.memory[index + 1]) as u32)
+                                        << 8
+                                    | ((self.memory[index + 2]) as u32)
+                                        << 16
+                                    | ((self.memory[index + 3]) as u32)
+                                        << 24;
                             }
                             0x4 => {
                                 inst.name = format!(
@@ -692,7 +695,8 @@ impl Cpu {
                                     as usize;
 
                                 self.registers[rd] = self.memory[index]
-                                    | self.memory[index + 1] << 8;
+                                    as u32
+                                    | (self.memory[index + 1] as u32) << 8;
                             }
                             _ => {
                                 panic!(
@@ -808,7 +812,7 @@ impl Cpu {
                                 + Cpu::sign_extend(imm, 12))
                                 as usize;
                             self.memory[index] =
-                                self.registers[rs2] & 0xff;
+                                (self.registers[rs2] & 0xff) as u8;
                         }
                         0x1 => {
                             inst.name = format!(
@@ -819,9 +823,9 @@ impl Cpu {
                                 + Cpu::sign_extend(imm, 12))
                                 as usize;
                             self.memory[index] =
-                                self.registers[rs2] & 0xff;
+                                (self.registers[rs2] & 0xff) as u8;
                             self.memory[index + 1] =
-                                self.registers[rs2] >> 8 & 0xff;
+                                (self.registers[rs2] >> 8 & 0xff) as u8;
                         }
                         0x2 => {
                             inst.name = format!(
@@ -832,13 +836,13 @@ impl Cpu {
                                 + Cpu::sign_extend(imm, 12))
                                 as usize;
                             self.memory[index] =
-                                self.registers[rs2] & 0xff;
+                                (self.registers[rs2] & 0xff) as u8;
                             self.memory[index + 1] =
-                                self.registers[rs2] >> 8 & 0xff;
+                                (self.registers[rs2] >> 8 & 0xff) as u8;
                             self.memory[index + 2] =
-                                self.registers[rs2] >> 16 & 0xff;
+                                (self.registers[rs2] >> 16 & 0xff) as u8;
                             self.memory[index + 3] =
-                                self.registers[rs2] >> 24 & 0xff;
+                                (self.registers[rs2] >> 24 & 0xff) as u8;
                         }
                         _ => {
                             panic!("unknown S funct3: {:#05b}", funct3);
@@ -897,6 +901,12 @@ impl Cpu {
             let mut buf = String::new();
             if interactive {
                 std::io::stdin().read_line(&mut buf).unwrap();
+            }
+            buf.pop();
+            match &*buf {
+                "mem" => self.print_memory(),
+                "reg" => self.print_registers(aliases),
+                _ => {}
             }
             if print_regs {
                 self.print_registers(aliases);
