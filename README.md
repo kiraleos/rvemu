@@ -16,8 +16,8 @@ test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ## Build & Run
 You need `rust` and `cargo` installed in order to build the emulator.
 ```
-$ git clone https://github.com/kiraleos/RVemu.git
-$ cd RVemu
+$ git clone https://github.com/kiraleos/rvemu.git
+$ cd rvemu
 $ cargo run ./tests/<file>
 ```
 or
@@ -29,7 +29,7 @@ to run the unit tests.
 ## Usage
 ```
 USAGE:
-    RVemu [OPTIONS] <FILE>
+    rvemu [OPTIONS] <FILE>
 
 ARGS:
     <FILE>    The path of the file to be executed
@@ -86,3 +86,34 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
 
 0000104c:   00000113            addi    x2,x0,0
 ```
+## Cross-compiling C for RISC-V
+You might want to compile your own C code for RISC-V instead of just running the provided tests.
+
+To do that you need to: 
+1. Install the [riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain) 
+2. Write a your C program (without stdlib). For example:
+    ```c
+    int fib(int n) {
+        if (n <= 1) return n;
+        return fib(n - 1) + fib(n - 2);
+    }
+    
+    void _start() {
+        fib(30);
+    
+        // exit syscall
+        asm("addi a7,zero,93;"
+            "addi a0,zero,0;"
+            "ecall;");
+    }
+    ```
+3. Compile it with `riscv32-unknown-elf-gcc fib.c -o fib -nostdlib`
+4. Run the emulator with `fib` as input
+    ```
+    $ time ./rvemu fib --stack
+    Program exited with exit code: 0
+
+    real    0m7.811s
+    user    0m7.811s
+    sys     0m0.000s
+    ```
