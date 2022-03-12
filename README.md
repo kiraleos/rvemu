@@ -45,11 +45,23 @@ OPTIONS:
                           execution, so it might cause undefined behaviour
     -V, --version         Print version information
 ```
+## Interactive mode
+To launch the emulator in interactive mode, pass the `-i` or `--interactive` option.
+
+This mode currently supports 2 commands: 
+* To see the contents of a register:
+    
+    `reg 5`
+* To see the contents of a memory location (physical address in hex):
+
+    `mem 0123abcd`
+
+To execute the next instruction just press enter. 
 ## Example
 ```
-$ cargo run -q -- -f ./tests/simple --debug --interactive --registers --aliases
-
-pc  : 0x00001000
+$ cargo run -q -- ./tests/simple --debug --interactive --registers --aliases
+> 
+  pc: 0x00001048
 zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000  
   tp: 0x00000000    t0: 0x00000000    t1: 0x00000000    t2: 0x00000000  
   s0: 0x00000000    s1: 0x00000000    a0: 0x00000000    a1: 0x00000000  
@@ -60,8 +72,8 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
   t3: 0x00000000    t4: 0x00000000    t5: 0x00000000    t6: 0x00000000  
 
 00001000:   0480006f            jal     x0,00000048
-
-pc  : 0x00001048
+> 
+  pc: 0x0000104c
 zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000  
   tp: 0x00000000    t0: 0x00000000    t1: 0x00000000    t2: 0x00000000  
   s0: 0x00000000    s1: 0x00000000    a0: 0x00000000    a1: 0x00000000  
@@ -72,8 +84,12 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
   t3: 0x00000000    t4: 0x00000000    t5: 0x00000000    t6: 0x00000000  
 
 00001048:   00000093            addi    x1,x0,0
-
-pc  : 0x0000104c
+> reg 2
+0x0
+> mem 104c
+0x00000113
+> 
+  pc: 0x00001050
 zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000  
   tp: 0x00000000    t0: 0x00000000    t1: 0x00000000    t2: 0x00000000  
   s0: 0x00000000    s1: 0x00000000    a0: 0x00000000    a1: 0x00000000  
@@ -84,6 +100,7 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
   t3: 0x00000000    t4: 0x00000000    t5: 0x00000000    t6: 0x00000000  
 
 0000104c:   00000113            addi    x2,x0,0
+> 
 ```
 ## Cross-compiling C for RISC-V
 You might want to compile your own C code for RISC-V instead of just running the provided tests.

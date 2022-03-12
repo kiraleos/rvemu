@@ -1,7 +1,7 @@
 use super::instruction::*;
 use crate::Args;
 use elf_rs::{Elf, ElfFile};
-use std::io::Read;
+use std::io::{Read, Write};
 
 pub struct Cpu {
     memory: Vec<u8>,
@@ -103,18 +103,6 @@ impl Cpu {
             }
         }
         println!("{}", strbuilder);
-    }
-
-    pub fn print_memory(&self) {
-        for i in (0x1000..self.memory.len()).step_by(4) {
-            let chunk = self.memory[i] as u32
-                | (self.memory[i + 1] as u32) << 8
-                | (self.memory[i + 2] as u32) << 16
-                | (self.memory[i + 3] as u32) << 24;
-            if chunk != 0 {
-                println!("{:#010x}:\t{:#010x}", i, chunk);
-            }
-        }
     }
 
     fn fetch(&self) -> u32 {
@@ -878,8 +866,124 @@ impl Cpu {
         self.pc += 4;
     }
 
-    #[allow(clippy::too_many_arguments)]
+    fn command_handler(&mut self, com: &str) {
+        if com.is_empty() {
+            return;
+        }
+        let tokens: Vec<&str> = com.split(' ').collect();
+        match tokens[0] {
+            "mem" => {
+                let addr = usize::from_str_radix(tokens[1], 16);
+                match addr {
+                    Ok(addr) => {
+                        if addr + 3 > self.memory.len() - 1 {
+                            println!("bad argument: memory out of bounds");
+                            return;
+                        }
+                        let chunk = self.memory[addr] as u32
+                            | (self.memory[addr + 1] as u32) << 8
+                            | (self.memory[addr + 2] as u32) << 16
+                            | (self.memory[addr + 3] as u32) << 24;
+                        println!("{:#010x}", chunk)
+                    }
+                    Err(err) => println!("bad argument: {}", err),
+                }
+            }
+            "reg" => {
+                let reg = tokens[1].parse::<usize>();
+                match reg {
+                    Ok(reg) => {
+                        if reg > self.registers.len() - 1 {
+                            println!("bad argument: no such register");
+                            return;
+                        }
+                        println!("{:#x}", self.registers[reg])
+                    }
+                    Err(err) => println!("bad argument: {}", err),
+                }
+            }
+            _ => {
+                println!("Unknown command: {}", tokens[0])
+            }
+        }
+    }
+
+    fn run_interactive(&mut self, args: Args) -> i32 {
+        let ret: i32;
+        let pc = args.pc;
+        if let Some(pc) = pc {
+            self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
+        }
+        if args.stack {
+            self.registers[2] = (self.memory.len() - 1) as u32;
+        }
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            print!("> ");
+            std::io::stdout().flush().unwrap();
+            std::io::stdin().read_line(&mut buf).unwrap();
+            buf.pop();
+            self.command_handler(&*buf);
+
+            let raw_inst = self.fetch();
+            let mut inst: Instruction = self.decode(raw_inst);
+            let pc_copy = self.pc;
+
+            if (&*buf).is_empty() {
+                self.execute(&mut inst);
+                if args.registers {
+                    self.print_registers(args.aliases);
+                }
+                println!(
+                    "{:<08x}:   {:08x}          	{}",
+                    pc_copy, raw_inst, inst.name
+                );
+            }
+
+            if (self.pc as usize) >= self.memory.len() {
+                if args.debug {
+                    println!("PC overflow.");
+                }
+                ret = -1;
+                break;
+            }
+            match inst.name.as_str() {
+                "ecall" => match self.registers[17] {
+                    // `exit` syscall
+                    93 => {
+                        ret = self.registers[10] as i32;
+                        println!("Program exited with exit code: {}", ret);
+                        break;
+                    }
+                    _ => {
+                        if args.debug {
+                            println!(
+                                "Unimplemented ECALL: {}",
+                                self.registers[17],
+                            );
+                        }
+                        ret = -2;
+                        break;
+                    }
+                },
+                "unimp" => {
+                    if args.debug {
+                        println!("Reached an unimp instruction.");
+                    }
+                    ret = -3;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        ret
+    }
+
     pub fn run(&mut self, args: Args) -> i32 {
+        if args.interactive {
+            return self.run_interactive(args);
+        }
         let ret: i32;
         let pc = args.pc;
         if let Some(pc) = pc {
@@ -889,17 +993,7 @@ impl Cpu {
             self.registers[2] = (self.memory.len() - 1) as u32;
         }
         loop {
-            let mut buf = String::new();
-            if args.interactive {
-                std::io::stdin().read_line(&mut buf).unwrap();
-            }
-            buf.pop();
-            match &*buf {
-                "mem" => self.print_memory(),
-                "reg" => self.print_registers(args.aliases),
-                _ => {}
-            }
-            if args.debug {
+            if args.registers {
                 self.print_registers(args.aliases);
             }
             let raw_inst = self.fetch();
@@ -950,57 +1044,6 @@ impl Cpu {
             }
         }
         ret
-    }
-
-    pub fn current_instruction(&self) -> String {
-        let raw_inst = self.fetch();
-        let inst: Instruction = self.decode(raw_inst);
-        format!(
-            "{:<08x}:   {:08x}          	{}",
-            self.pc, raw_inst, inst.name
-        )
-    }
-
-    pub fn all_instructions(&mut self) -> String {
-        let mut str = String::new();
-        loop {
-            let raw_inst = self.fetch();
-            let mut inst: Instruction = self.decode(raw_inst);
-            let pc_copy = self.pc;
-            self.execute(&mut inst);
-            str += &*format!(
-                "{:<08x}:   {:08x}          	{}\n",
-                pc_copy, raw_inst, inst.name
-            );
-
-            if inst.name.as_str() == "ecall" {
-                match self.registers[17] {
-                    // `exit` syscall
-                    93 => {
-                        break;
-                    }
-                    _ => {
-                        panic!("unknown syscall");
-                    }
-                }
-            }
-        }
-        self.reset_registers();
-        str
-    }
-
-    fn reset_registers(&mut self) {
-        for reg in &mut self.registers {
-            *reg = 0;
-        }
-        self.pc = 0;
-    }
-
-    pub fn execute_at_pc(&mut self) {
-        let raw_inst = self.fetch();
-        let mut inst: Instruction = self.decode(raw_inst);
-        self.execute(&mut inst);
-        self.pc += 4;
     }
 
     fn sign_extend(data: u32, size: u32) -> u32 {

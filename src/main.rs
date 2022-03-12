@@ -4,7 +4,7 @@ use clap::Parser;
 use emulator::cpu::Cpu;
 
 ///  A RISC-V emulator, specifically the RV32I base integer instruction set.
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 #[clap(author, version, about, long_about = None)]
 pub struct Args {
     /// The path of the file to be executed
@@ -37,7 +37,7 @@ pub struct Args {
     #[clap(short, long)]
     pub stack: bool,
 
-    /// Set memory size in KiB (default = 16KiB)
+    /// Set memory size in KiB (default = 16)
     #[clap(long, value_name = "size")]
     pub mem: Option<String>,
 }
@@ -58,11 +58,4 @@ fn main() {
     );
 
     cpu.run(args);
-
-    // TODO
-    // add commands to interactive mode
-    //      1. `mem <addr|range>` to show a memory location
-    //      2. `reg <x> to show a single register's value`
-    //      3. `regset <reg> <value>` to set a register's value
-    //      4. `memset <addr> <value>` to set a memory location's value
 }
