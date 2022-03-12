@@ -1,7 +1,7 @@
 # RVemu, a RISC-V emulator
 A RISC-V emulator, specifically the RV32I base integer instruction set.
 
-This emulator does not provide any kernel, so 32bit little-endian RV32I ELF files that expect a kernel or an OS may not work as expected. The only thing close to an OS that this emulator provides is the `exit()` system call and the `--stack` option to provide a stack.
+This emulator does not provide any kernel or OS, so programs that expect a kernel or an OS will not work as expected. The only thing close to a kernel that this emulator provides is the `exit()` system call and the `--stack` option which provides a stack space. With these two features, this emulator can effectively execute compiled binaries that do not rely on `libc`. 
 
 The pre-compiled test binaries are included in this repo. The tests are built from [riscv-tests](https://github.com/riscv/riscv-tests). All the tests pass, so every RV32I instruction works as per the specification.
 
