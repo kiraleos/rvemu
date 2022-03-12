@@ -1,19 +1,18 @@
 use super::instruction::*;
+use crate::Args;
 use elf_rs::{Elf, ElfFile};
 use std::io::Read;
 
-const MEM_SIZE: usize = 16;
-
 pub struct Cpu {
-    memory: [u8; 1024 * MEM_SIZE],
+    memory: Vec<u8>,
     registers: [u32; 32],
     pc: u32,
 }
 
 impl Cpu {
-    pub fn new() -> Self {
+    pub fn new(mem_size: usize) -> Self {
         Cpu {
-            memory: [0; 1024 * MEM_SIZE],
+            memory: vec![0; mem_size * 1024],
             registers: [0; 32],
             pc: 0,
         }
@@ -880,42 +879,34 @@ impl Cpu {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn run(
-        &mut self,
-        debug: bool,
-        print_inst: bool,
-        print_regs: bool,
-        pc: Option<String>,
-        aliases: bool,
-        interactive: bool,
-        stack: bool,
-    ) -> i32 {
+    pub fn run(&mut self, args: Args) -> i32 {
         let ret: i32;
+        let pc = args.pc;
         if let Some(pc) = pc {
             self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
         }
-        if stack {
+        if args.stack {
             self.registers[2] = (self.memory.len() - 1) as u32;
         }
         loop {
             let mut buf = String::new();
-            if interactive {
+            if args.interactive {
                 std::io::stdin().read_line(&mut buf).unwrap();
             }
             buf.pop();
             match &*buf {
                 "mem" => self.print_memory(),
-                "reg" => self.print_registers(aliases),
+                "reg" => self.print_registers(args.aliases),
                 _ => {}
             }
-            if print_regs {
-                self.print_registers(aliases);
+            if args.debug {
+                self.print_registers(args.aliases);
             }
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
             self.execute(&mut inst);
-            if print_inst {
+            if args.debug {
                 println!(
                     "{:<08x}:   {:08x}          	{}",
                     pc_copy, raw_inst, inst.name
@@ -923,7 +914,7 @@ impl Cpu {
             }
 
             if (self.pc as usize) >= self.memory.len() {
-                if debug {
+                if args.debug {
                     println!("PC overflow.");
                 }
                 ret = -1;
@@ -938,7 +929,7 @@ impl Cpu {
                         break;
                     }
                     _ => {
-                        if debug {
+                        if args.debug {
                             println!(
                                 "Unimplemented ECALL: {}",
                                 self.registers[17],
@@ -949,7 +940,7 @@ impl Cpu {
                     }
                 },
                 "unimp" => {
-                    if debug {
+                    if args.debug {
                         println!("Reached an unimp instruction.");
                     }
                     ret = -3;

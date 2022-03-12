@@ -20,12 +20,10 @@ $ git clone https://github.com/kiraleos/rvemu.git
 $ cd rvemu
 $ cargo run ./tests/<file>
 ```
-or
+or, to run the unit tests
 ```
 $ cargo test
 ```
-to run the unit tests.
-
 ## Usage
 ```
 USAGE:
@@ -40,6 +38,7 @@ OPTIONS:
     -d, --debug           Print instructions as they are executed
     -h, --help            Print help information
     -i, --interactive     Interactive mode. Use with either `--registers` and/or `--debug`
+        --mem <size>      Set memory size in KiB (default = 16KiB)
         --pc <address>    Override ELF entry point
     -r, --registers       Show register values after each instruction
     -s, --stack           Provide a stack of "infinite" size. This sets the stack pointer before
@@ -91,16 +90,16 @@ You might want to compile your own C code for RISC-V instead of just running the
 
 To do that you need to: 
 1. Install the [riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain) 
-2. Write a your C program (without stdlib). For example:
+2. Write your C program (without stdlib). For example:
     ```c
     int fib(int n) {
         if (n <= 1) return n;
         return fib(n - 1) + fib(n - 2);
     }
-    
+
     void _start() {
         fib(30);
-    
+
         // exit syscall
         asm("addi a7,zero,93;"
             "addi a0,zero,0;"
