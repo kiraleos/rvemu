@@ -1,7 +1,7 @@
-# RISC-V (RV32I) Emulator
+# RVemu, a RISC-V emulator
 A RISC-V emulator, specifically the RV32I base integer instruction set.
 
-This emulator does not provide any kernel so 32bit little-endian RV32I ELF files compiled with `gcc` that expect a kernel or an OS will not work as expected. The only thing close to an OS that this emulator provides is the `exit` system call which just prints the program's exit code to standard out.
+This emulator does not provide any kernel, so 32bit little-endian RV32I ELF files that expect a kernel or an OS may not work as expected. The only thing close to an OS that this emulator provides is the `exit()` system call and the `--stack` option to provide a stack.
 
 The pre-compiled test binaries are included in this repo. The tests are built from [riscv-tests](https://github.com/riscv/riscv-tests). All the tests pass, so every RV32I instruction works as per the specification.
 
@@ -16,8 +16,8 @@ test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ## Build & Run
 You need `rust` and `cargo` installed in order to build the emulator.
 ```
-$ git clone https://github.com/kiraleos/riscv32i-emulator.git
-$ cd riscv32i-emulator
+$ git clone https://github.com/kiraleos/RVemu.git
+$ cd RVemu
 $ cargo run ./tests/<file>
 ```
 or
@@ -29,7 +29,7 @@ to run the unit tests.
 ## Usage
 ```
 USAGE:
-    riscv-emulator [OPTIONS] <FILE>
+    RVemu [OPTIONS] <FILE>
 
 ARGS:
     <FILE>    The path of the file to be executed
