@@ -123,7 +123,7 @@ To do that you need to:
             "ecall;");
     }
     ```
-3. Compile it with `riscv32-unknown-elf-gcc fib.c -o fib -nostdlib`
+3. Compile it with `riscv64-unknown-elf-gcc fib.c -o fib -nostdlib -march=rv32i -mabi=ilp32`
 4. Run the emulator with `fib` as input
     ```
     $ time ./rvemu fib --stack
