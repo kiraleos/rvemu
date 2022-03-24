@@ -35,11 +35,20 @@ impl Cpu {
             .expect("Are you sure this is an ELF file?");
         match elf.elf_header().machine() {
             elf_rs::ElfMachine::RISC_V => {
-                let p_vaddr = elf.program_header_nth(0).unwrap().vaddr();
-                let p_offset = elf.program_header_nth(0).unwrap().offset();
-                self.pc = (elf.entry_point() - p_vaddr + p_offset)
-                    .try_into()
-                    .expect("couldn't convert u64 entry addr to u32");
+                for phdr in elf.program_header_iter() {
+                    let e_entry = elf.entry_point();
+                    if phdr.vaddr() <= e_entry
+                        && e_entry < phdr.vaddr() + phdr.memsz()
+                    {
+                        let p_vaddr = phdr.vaddr();
+                        let p_offset = phdr.offset();
+                        self.pc = (e_entry - p_vaddr + p_offset)
+                            .try_into()
+                            .expect(
+                                "couldn't convert u64 entry addr to u32",
+                            );
+                    }
+                }
             }
             _ => {
                 panic!(
