@@ -3,6 +3,12 @@ use crate::Args;
 use elf_rs::{Elf, ElfFile};
 use std::io::{Read, Write};
 
+const ALIASES: [&str; 32] = [
+    "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0",
+    "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5",
+    "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6",
+];
+
 pub struct Cpu {
     memory: Vec<u8>,
     registers: [u32; 32],
@@ -50,46 +56,11 @@ impl Cpu {
         let mut reg_name;
         println!(" pc: 0x{:0>8x}", self.pc);
         let mut strbuilder = String::new();
-        for i in 0..self.registers.len() {
+        for (i, alias) in ALIASES.iter().enumerate() {
             if aliases {
-                reg_name = match i {
-                    0 => "zero".to_string(),
-                    1 => "ra".to_string(),
-                    2 => "sp".to_string(),
-                    3 => "gp".to_string(),
-                    4 => "tp".to_string(),
-                    5 => "t0".to_string(),
-                    6 => "t1".to_string(),
-                    7 => "t2".to_string(),
-                    8 => "s0".to_string(),
-                    9 => "s1".to_string(),
-                    10 => "a0".to_string(),
-                    11 => "a1".to_string(),
-                    12 => "a2".to_string(),
-                    13 => "a3".to_string(),
-                    14 => "a4".to_string(),
-                    15 => "a5".to_string(),
-                    16 => "a6".to_string(),
-                    17 => "a7".to_string(),
-                    18 => "s2".to_string(),
-                    19 => "s3".to_string(),
-                    20 => "s4".to_string(),
-                    21 => "s5".to_string(),
-                    22 => "s6".to_string(),
-                    23 => "s7".to_string(),
-                    24 => "s8".to_string(),
-                    25 => "s9".to_string(),
-                    26 => "s10".to_string(),
-                    27 => "s11".to_string(),
-                    28 => "t3".to_string(),
-                    29 => "t4".to_string(),
-                    30 => "t5".to_string(),
-                    31 => "t6".to_string(),
-                    _ => panic!("should never be here"),
-                };
                 strbuilder += &*format!(
                     "{:>4}: 0x{:0>8x}  ",
-                    reg_name, self.registers[i]
+                    *alias, self.registers[i]
                 );
             } else {
                 reg_name = String::from("x") + &i.to_string();
