@@ -80,6 +80,8 @@ pub enum Outcome {
     /// The program made a system call the emulator does not implement. The
     /// payload is the system call number, which lives in `a7`.
     UnsupportedSyscall(u32),
+    /// The program executed `ebreak`.
+    Breakpoint,
     /// The program reached an instruction the emulator does not implement.
     UnsupportedInstruction,
 }
@@ -189,6 +191,8 @@ pub enum Step {
     Jump,
     /// `ecall`, so the run loop has to service a system call.
     Ecall,
+    /// `ebreak`, a requested trap the run loop has to report.
+    Breakpoint,
     /// An instruction this emulator does not implement, so it should stop.
     Unsupported,
 }
@@ -547,18 +551,30 @@ impl Cpu {
                         trace.write_str("ecall");
                         Step::Ecall
                     }
+                    // Both ECALL and EBREAK "cause a precise requested trap to
+                    // the supporting execution environment" (RV32I 1.9), and
+                    // this emulator has no traps, so it reports the breakpoint
+                    // and stops.
                     0x001 => {
                         trace.write_str("ebreak");
-                        Step::Next
+                        Step::Breakpoint
                     }
+                    // MRET belongs to the privileged architecture, which this
+                    // emulator does not implement. It is left as a no-op because
+                    // the riscv-tests programs use it in their machine-mode setup
+                    // and would never reach the instruction they are testing.
                     0b0011_0000_0010 => {
                         trace.write_str("mret");
                         Step::Next
                     }
                     other => panic!("unknown I imm: {other:#014b}"),
                 },
-                // This emulator implements no CSR file, so the CSR instructions
-                // decode and retire without touching any register.
+                // This emulator implements no CSR file, and the same is true of
+                // the riscv-tests programs' machine-mode setup: they write
+                // mtvec, satp and pmpcfg0 before the test body. Discarding
+                // every access is what lets them run to completion, so a
+                // program that relies on a CSR value reading one back gets
+                // zero instead.
                 0b001 => {
                     trace.write(format_args!("csrrw   x{rd},{imm:#x},x{rs1}"));
                     Step::Next
@@ -737,6 +753,10 @@ impl Cpu {
             }
             match step {
                 Some(Step::Ecall) => return self.handle_ecall(config.debug),
+                Some(Step::Breakpoint) => {
+                    println!("Program hit a breakpoint at 0x{pc:08x}.");
+                    return Outcome::Breakpoint;
+                }
                 Some(Step::Unsupported) => {
                     if config.debug {
                         println!("Reached an unimp instruction.");
@@ -995,12 +1015,20 @@ mod tests {
     }
 
     #[test]
-    fn ecall_ebreak_and_mret_report_what_the_run_loop_has_to_do() {
+    fn ecall_and_ebreak_are_reported_to_the_run_loop() {
         let mut h = Harness::new();
         h.step_to(enc::system(0, 0b000, 0, 0x000), Step::Ecall, 4);
         assert_eq!(h.disasm(), "ecall");
-        h.step_to(enc::system(0, 0b000, 0, 0x001), Step::Next, 4);
+        // EBREAK is a requested trap, so it has to stop the run like ECALL
+        // does rather than retire as if nothing had happened.
+        h.step_to(enc::system(0, 0b000, 0, 0x001), Step::Breakpoint, 4);
         assert_eq!(h.disasm(), "ebreak");
+    }
+
+    #[test]
+    fn mret_is_a_no_op() {
+        // It belongs to the privileged architecture, which is not implemented.
+        let mut h = Harness::new();
         h.step_to(enc::system(0, 0b000, 0, 0x302), Step::Next, 4);
         assert_eq!(h.disasm(), "mret");
     }
@@ -1112,5 +1140,13 @@ mod tests {
         cpu.load(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/add"))
             .unwrap();
         assert_eq!(cpu.pc, 0x1000);
+    }
+
+    #[test]
+    fn a_breakpoint_ends_the_run() {
+        // `run` needs no image to have been loaded to execute one instruction.
+        let mut cpu = Cpu::new(1);
+        cpu.memory[..4].copy_from_slice(&enc::system(0, 0b000, 0, 0x001).to_le_bytes());
+        assert_eq!(cpu.run(&RunConfig::default()), Outcome::Breakpoint);
     }
 }

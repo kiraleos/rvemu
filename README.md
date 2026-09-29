@@ -52,8 +52,16 @@ Options:
 ```
 
 The emulator exits with the status the program passed to `exit`, or with 1 if it
-could not run: if the program ran off the end of memory, made a system call that
-is not implemented, or reached an instruction this emulator does not implement.
+could not run: if the program ran off the end of memory, hit a breakpoint, made a
+system call that is not implemented, or reached an instruction this emulator does
+not implement.
+
+`ebreak` is a requested trap rather than a no-op, so a program that reaches one
+stops with a message naming its address. Note that the programs in `tests/` use
+`mret` and the machine-mode CSRs as part of their setup, and this emulator has
+neither privilege modes nor a CSR file, so it lets `mret` retire and discards
+every CSR access. That is what lets them run at all; it also means those programs
+only exercise the arithmetic and memory instructions, not traps.
 
 ## Interactive mode
 To launch the emulator in interactive mode, pass the `-i` or `--interactive` option.
