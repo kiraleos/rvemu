@@ -39,12 +39,19 @@ OPTIONS:
     -h, --help            Print help information
     -i, --interactive     Interactive mode. Use with either `--registers` and/or `--debug`
         --mem <size>      Set memory size in KiB (default = 16KiB)
-        --pc <address>    Override ELF entry point
+        --pc <address>    Override ELF entry point (hexadecimal, e.g. 1000 or 0x1000)
     -r, --registers       Show register values after each instruction
     -s, --stack           Provide a stack of "infinite" size. This sets the stack pointer before
                           execution, so it might cause undefined behaviour
     -V, --version         Print version information
 ```
+
+## Exit status
+The process exits with the status the guest program passed to `exit`. If the program could not be
+run at all, the emulator exits with a nonzero status instead:
+* `1` — the image could not be loaded, or the program trapped (an unsupported instruction, an
+  out-of-bounds memory access, or an unimplemented system call). Pass `--debug` for the reason.
+* `2` — the command line could not be parsed, or the requested memory size could not be allocated.
 ## Interactive mode
 To launch the emulator in interactive mode, pass the `-i` or `--interactive` option.
 

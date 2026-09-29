@@ -59,7 +59,8 @@ pub enum LoadError {
     Elf(String),
     /// The ELF targets a machine this emulator does not implement.
     Arch(String),
-    /// The binary does not fit in the configured amount of memory.
+    /// The binary does not fit in the configured amount of memory, or that
+    /// much memory could not be allocated.
     Memory { needed: usize, available: usize },
 }
 
@@ -69,12 +70,22 @@ impl std::fmt::Display for LoadError {
             LoadError::Io(msg) => write!(f, "{}", msg),
             LoadError::Elf(msg) => write!(f, "{}", msg),
             LoadError::Arch(msg) => write!(f, "{}", msg),
-            LoadError::Memory { needed, available } => write!(
-                f,
-                "image needs {} bytes but only {} bytes of memory are \
-                 configured; raise it with --mem",
-                needed, available
-            ),
+            LoadError::Memory { needed, available } => {
+                if *available == 0 {
+                    write!(
+                        f,
+                        "could not allocate {} bytes of memory",
+                        needed
+                    )
+                } else {
+                    write!(
+                        f,
+                        "image needs {} bytes but only {} bytes of \
+                         memory are configured; raise it with --mem",
+                        needed, available
+                    )
+                }
+            }
         }
     }
 }

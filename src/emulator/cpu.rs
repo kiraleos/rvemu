@@ -21,13 +21,30 @@ pub struct Cpu {
 const NUM_CSRS: usize = 4096;
 
 impl Cpu {
-    pub fn new(mem_size: usize) -> Self {
-        Cpu {
-            memory: vec![0; mem_size * 1024],
+    /// Create a CPU with `mem_size` KiB of memory.
+    ///
+    /// Returns an error rather than aborting if the allocation cannot be
+    /// satisfied, so an unreasonable `--mem` is a diagnostic instead of a
+    /// process abort.
+    pub fn new(mem_size: usize) -> Result<Self, LoadError> {
+        let bytes = mem_size.checked_mul(1024).ok_or(LoadError::Memory {
+            needed: usize::MAX,
+            available: 0,
+        })?;
+        let mut memory = Vec::new();
+        memory
+            .try_reserve_exact(bytes)
+            .map_err(|_| LoadError::Memory {
+                needed: bytes,
+                available: 0,
+            })?;
+        memory.resize(bytes, 0);
+        Ok(Cpu {
+            memory,
             registers: [0; 32],
             csrs: [0; NUM_CSRS],
             pc: 0,
-        }
+        })
     }
 
     /// Load a RISC-V ELF binary into memory and set `pc` to its entry point.
@@ -1079,9 +1096,10 @@ impl Cpu {
 
     fn run_interactive(&mut self, args: Args) -> i32 {
         let ret: i32;
-        let pc = args.pc;
-        if let Some(pc) = pc {
-            self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
+        // `--pc` is parsed and validated by the argument parser, so an
+        // out-of-range or non-hex value is rejected before we get here.
+        if let Some(pc) = args.pc {
+            self.pc = pc;
         }
         if args.stack {
             self.registers[2] = (self.memory.len() - 1) as u32;
@@ -1144,9 +1162,10 @@ impl Cpu {
             return self.run_interactive(args);
         }
         let ret: i32;
-        let pc = args.pc;
-        if let Some(pc) = pc {
-            self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
+        // `--pc` is parsed and validated by the argument parser, so an
+        // out-of-range or non-hex value is rejected before we get here.
+        if let Some(pc) = args.pc {
+            self.pc = pc;
         }
         if args.stack {
             self.registers[2] = (self.memory.len() - 1) as u32;

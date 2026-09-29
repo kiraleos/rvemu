@@ -3,6 +3,9 @@ mod tests;
 use clap::Parser;
 use emulator::cpu::Cpu;
 
+/// The default amount of memory, in KiB.
+const DEFAULT_MEM_KIB: usize = 16;
+
 ///  A RISC-V emulator, specifically the RV32I base integer instruction set.
 #[derive(Parser, Clone)]
 #[clap(author, version, about, long_about = None)]
@@ -28,9 +31,9 @@ pub struct Args {
     #[clap(short, long)]
     pub interactive: bool,
 
-    /// Override ELF entry point
-    #[clap(long, value_name = "address")]
-    pub pc: Option<String>,
+    /// Override ELF entry point (hexadecimal, e.g. 1000 or 0x1000)
+    #[clap(long, value_name = "address", parse(try_from_str = parse_hex))]
+    pub pc: Option<u32>,
 
     /// Provide a stack of "infinite" size.
     /// This sets the stack pointer before execution, so it might cause undefined behaviour.
@@ -41,14 +44,53 @@ pub struct Args {
     #[clap(long, value_name = "size")]
     pub mem: Option<String>,
 }
+
+/// Parse a hexadecimal address, rejecting anything that is not a valid u32.
+fn parse_hex(s: &str) -> Result<u32, String> {
+    let trimmed = s.trim();
+    let digits = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    u32::from_str_radix(digits, 16)
+        .map_err(|e| format!("'{}' is not a 32-bit hex address: {}", s, e))
+}
+
+/// The requested memory size in KiB, or the default if it was not given.
+fn mem_kib(args: &Args) -> Result<usize, String> {
+    match &args.mem {
+        None => Ok(DEFAULT_MEM_KIB),
+        Some(raw) => raw
+            .trim()
+            .parse::<usize>()
+            .map_err(|e| format!("--mem '{}' is not a size in KiB: {}", raw, e))
+            .and_then(|kib| {
+                if kib == 0 {
+                    return Err(String::from(
+                        "--mem must be greater than zero",
+                    ));
+                }
+                // `mem_size * 1024` is done in usize and would wrap for
+                // absurd inputs, producing a tiny allocation.
+                kib.checked_mul(1024).ok_or_else(|| {
+                    format!("--mem {} KiB is too large", kib)
+                })
+            })
+            .map(|bytes| bytes / 1024),
+    }
+}
+
 fn main() {
     let args = Args::parse();
 
-    let mem = args.mem.clone();
-    let mut cpu = match mem {
-        Some(mem) => Cpu::new(str::parse(&*mem).unwrap_or(16)),
-        None => Cpu::new(16),
-    };
+    let kib = mem_kib(&args).unwrap_or_else(|e| {
+        eprintln!("error: {}", e);
+        std::process::exit(2);
+    });
+    let mut cpu = Cpu::new(kib).unwrap_or_else(|e| {
+        eprintln!("error: {}", e);
+        std::process::exit(2);
+    });
     cpu.load(
         args.file
             .clone()
