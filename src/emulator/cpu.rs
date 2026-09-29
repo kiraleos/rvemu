@@ -34,6 +34,10 @@ const A0: usize = 10;
 /// `x17`, the register holding the system call number.
 const A7: usize = 17;
 
+/// The only system call this emulator implements, from the Linux syscall
+/// numbers: `exit`, which takes its status in `a0`.
+const EXIT_SYSCALL: u32 = 93;
+
 /// Every RV32I instruction is four bytes wide, which is also the width of an
 /// address on RV32I.
 const INSTRUCTION_SIZE: u32 = 4;
@@ -600,8 +604,7 @@ impl Cpu {
 
     /// Interprets the `ecall` that was just retired, which always ends the run.
     fn handle_ecall(&self, debug: bool) -> Outcome {
-        // 93 is the only system call this emulator implements: `exit`.
-        if self.registers[A7] == 93 {
+        if self.registers[A7] == EXIT_SYSCALL {
             let code = self.registers[A0] as i32;
             println!("Program exited with exit code: {code}");
             return Outcome::Exited(code);
@@ -632,6 +635,8 @@ impl Cpu {
             Ok(address) => address,
             Err(reason) => return format!("bad argument: {reason}"),
         };
+        // The last byte of a four byte word, without overflowing on a huge
+        // address.
         match address.checked_add(3) {
             Some(end) if (end as usize) < self.memory.len() => {
                 format!("{:#010x}", self.load_bytes::<4>(address))
