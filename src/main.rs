@@ -1,50 +1,45 @@
-mod emulator;
-
-#[cfg(test)]
-mod tests;
-
 use clap::Parser;
-use emulator::cpu::{Cpu, Outcome, RunConfig};
+use rvemu::emulator::cpu::{Cpu, Outcome, RunConfig};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 ///  A RISC-V emulator, specifically the RV32I base integer instruction set.
-#[derive(Parser, Clone)]
+#[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
-pub struct Args {
+struct Args {
     /// The path of the file to be executed
     #[clap(parse(from_os_str), value_name = "FILE")]
     file: PathBuf,
 
     /// Print instructions as they are executed
     #[clap(short, long)]
-    pub debug: bool,
+    debug: bool,
 
     /// Show register values after each instruction
     #[clap(short, long)]
-    pub registers: bool,
+    registers: bool,
 
     /// Show register ABI names or numeric values (x0-x31)
     /// Use with the `--registers` option.
     #[clap(short, long)]
-    pub aliases: bool,
+    aliases: bool,
 
     /// Interactive mode. Use with either `--registers` and/or `--debug`
     #[clap(short, long)]
-    pub interactive: bool,
+    interactive: bool,
 
-    /// Override ELF entry point
+    /// Override ELF entry point, in hexadecimal
     #[clap(long, value_name = "address")]
-    pub pc: Option<String>,
+    pc: Option<String>,
 
     /// Provide a stack of "infinite" size.
     /// This sets the stack pointer before execution, so it might cause undefined behaviour.
     #[clap(short, long)]
-    pub stack: bool,
+    stack: bool,
 
     /// Set memory size in KiB (default = 16)
     #[clap(long, value_name = "size")]
-    pub mem: Option<String>,
+    mem: Option<String>,
 }
 
 /// The default size of emulated memory, in kibibytes.
