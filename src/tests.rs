@@ -15,7 +15,7 @@ fn add() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/add");
+    cpu.load("./tests/add").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -33,7 +33,7 @@ fn addi() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/addi");
+    cpu.load("./tests/addi").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -51,7 +51,7 @@ fn and() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/and");
+    cpu.load("./tests/and").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -69,7 +69,7 @@ fn andi() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/andi");
+    cpu.load("./tests/andi").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -87,7 +87,7 @@ fn auipc() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/auipc");
+    cpu.load("./tests/auipc").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -105,7 +105,7 @@ fn beq() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/beq");
+    cpu.load("./tests/beq").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -123,7 +123,7 @@ fn bge() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/bge");
+    cpu.load("./tests/bge").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -141,7 +141,7 @@ fn bgeu() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/bgeu");
+    cpu.load("./tests/bgeu").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -159,7 +159,7 @@ fn blt() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/blt");
+    cpu.load("./tests/blt").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -177,7 +177,7 @@ fn bltu() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/bltu");
+    cpu.load("./tests/bltu").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -195,7 +195,7 @@ fn bne() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/bne");
+    cpu.load("./tests/bne").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -213,7 +213,7 @@ fn fence_i() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/fence_i");
+    cpu.load("./tests/fence_i").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -231,7 +231,7 @@ fn jal() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/jal");
+    cpu.load("./tests/jal").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -249,7 +249,7 @@ fn jalr() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/jalr");
+    cpu.load("./tests/jalr").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -267,7 +267,7 @@ fn lb() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/lb");
+    cpu.load("./tests/lb").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -285,7 +285,7 @@ fn lbu() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/lbu");
+    cpu.load("./tests/lbu").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -303,7 +303,7 @@ fn lh() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/lh");
+    cpu.load("./tests/lh").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -321,7 +321,7 @@ fn lhu() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/lhu");
+    cpu.load("./tests/lhu").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -339,7 +339,7 @@ fn lui() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/lui");
+    cpu.load("./tests/lui").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -357,7 +357,7 @@ fn lw() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/lw");
+    cpu.load("./tests/lw").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -375,7 +375,7 @@ fn or() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/or");
+    cpu.load("./tests/or").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -393,7 +393,7 @@ fn ori() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/ori");
+    cpu.load("./tests/ori").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -411,7 +411,7 @@ fn sb() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sb");
+    cpu.load("./tests/sb").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -429,7 +429,7 @@ fn sh() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sh");
+    cpu.load("./tests/sh").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -447,7 +447,7 @@ fn simple() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/simple");
+    cpu.load("./tests/simple").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -465,7 +465,7 @@ fn sll() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sll");
+    cpu.load("./tests/sll").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -483,7 +483,7 @@ fn slli() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/slli");
+    cpu.load("./tests/slli").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -501,7 +501,7 @@ fn slt() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/slt");
+    cpu.load("./tests/slt").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -519,7 +519,7 @@ fn slti() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/slti");
+    cpu.load("./tests/slti").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -537,7 +537,7 @@ fn sltiu() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sltiu");
+    cpu.load("./tests/sltiu").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -555,7 +555,7 @@ fn sltu() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sltu");
+    cpu.load("./tests/sltu").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -573,7 +573,7 @@ fn sra() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sra");
+    cpu.load("./tests/sra").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -591,7 +591,7 @@ fn srai() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/srai");
+    cpu.load("./tests/srai").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -609,7 +609,7 @@ fn srl() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/srl");
+    cpu.load("./tests/srl").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -627,7 +627,7 @@ fn srli() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/srli");
+    cpu.load("./tests/srli").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -645,7 +645,7 @@ fn sub() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sub");
+    cpu.load("./tests/sub").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -663,7 +663,7 @@ fn sw() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/sw");
+    cpu.load("./tests/sw").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -681,7 +681,7 @@ fn xor() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/xor");
+    cpu.load("./tests/xor").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }
@@ -699,7 +699,7 @@ fn xori() {
         stack: false,
         mem: None,
     };
-    cpu.load("./tests/xori");
+    cpu.load("./tests/xori").unwrap();
     let ret = cpu.run(args);
     assert_eq!(ret, 0);
 }

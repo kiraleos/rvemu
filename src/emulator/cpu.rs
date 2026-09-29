@@ -1,4 +1,5 @@
 use super::instruction::*;
+use super::trap::{LoadError, Outcome, Trap};
 use crate::Args;
 use elf_rs::{Elf, ElfFile};
 use std::io::{Read, Write};
@@ -12,27 +13,38 @@ const ALIASES: [&str; 32] = [
 pub struct Cpu {
     memory: Vec<u8>,
     registers: [u32; 32],
+    csrs: [u32; NUM_CSRS],
     pc: u32,
 }
+
+/// The Zicsr address space is 12 bits wide, so 4096 registers suffice.
+const NUM_CSRS: usize = 4096;
 
 impl Cpu {
     pub fn new(mem_size: usize) -> Self {
         Cpu {
             memory: vec![0; mem_size * 1024],
             registers: [0; 32],
+            csrs: [0; NUM_CSRS],
             pc: 0,
         }
     }
 
-    pub fn load(&mut self, path: &str) {
-        let mut elf_file =
-            std::fs::File::open(path).expect("open file failed");
+    /// Load a RISC-V ELF binary into memory and set `pc` to its entry point.
+    pub fn load(&mut self, path: &str) -> Result<(), LoadError> {
+        let mut elf_file = std::fs::File::open(path).map_err(|e| {
+            LoadError::Io(format!("could not open '{}': {}", path, e))
+        })?;
         let mut elf_buf = Vec::<u8>::new();
-        elf_file
-            .read_to_end(&mut elf_buf)
-            .expect("read file failed");
-        let elf = Elf::from_bytes(&elf_buf)
-            .expect("Are you sure this is an ELF file?");
+        elf_file.read_to_end(&mut elf_buf).map_err(|e| {
+            LoadError::Io(format!("could not read '{}': {}", path, e))
+        })?;
+        let elf = Elf::from_bytes(&elf_buf).map_err(|_| {
+            LoadError::Elf(format!(
+                "'{}' is not a valid ELF file",
+                path
+            ))
+        })?;
         match elf.elf_header().machine() {
             elf_rs::ElfMachine::RISC_V => {
                 for phdr in elf.program_header_iter() {
@@ -44,21 +56,25 @@ impl Cpu {
                         let p_offset = phdr.offset();
                         self.pc = (e_entry - p_vaddr + p_offset)
                             .try_into()
-                            .expect(
-                                "couldn't convert u64 entry addr to u32",
-                            );
+                            .map_err(|_| {
+                                LoadError::Elf(format!(
+                                    "ELF entry address does not fit in 32 bits: {}",
+                                    e_entry
+                                ))
+                            })?;
                     }
                 }
             }
-            _ => {
-                panic!(
+            machine => {
+                return Err(LoadError::Arch(format!(
                     "unsupported architecture: {:#?}",
-                    elf.elf_header().machine()
-                );
+                    machine
+                )));
             }
         }
         let raw_data: Vec<u8> = elf_buf.into_iter().collect();
         self.memory[..raw_data.len()].copy_from_slice(&raw_data);
+        Ok(())
     }
 
     pub fn print_registers(&self, aliases: bool) {
@@ -217,7 +233,7 @@ impl Cpu {
         instruction
     }
 
-    fn execute(&mut self, inst: &mut Instruction) {
+    fn execute(&mut self, inst: &mut Instruction) -> Result<Outcome, Trap> {
         match inst.type_name {
             InstTypeName::R => {
                 if let InstTypeData::R {
@@ -247,10 +263,12 @@ impl Cpu {
                                     .wrapping_sub(self.registers[rs2]);
                             }
                             _ => {
-                                panic!(
-                                    "unknown R funct7: {:#09b}",
-                                    funct7
-                                );
+                                return Err(Trap::UnsupportedInstruction {
+                                    detail: format!(
+                                        "R-type funct7 {:#09b}",
+                                        funct7
+                                    ),
+                                });
                             }
                         },
                         0x4 => {
@@ -305,10 +323,12 @@ impl Cpu {
                                     as u32;
                             }
                             _ => {
-                                panic!(
-                                    "unknown R funct7: {:#09b}",
-                                    funct7
-                                );
+                                return Err(Trap::UnsupportedInstruction {
+                                    detail: format!(
+                                        "R-type funct7 {:#09b}",
+                                        funct7
+                                    ),
+                                });
                             }
                         },
                         0x2 => {
@@ -339,10 +359,12 @@ impl Cpu {
                             }
                         }
                         _ => {
-                            panic!(
-                                "execute: unimplemented R funct3: {:#05b}",
-                                funct3
-                            );
+                            return Err(Trap::UnsupportedInstruction {
+                                detail: format!(
+                                    "R-type funct3 {:#05b}",
+                                    funct3
+                                ),
+                            });
                         }
                     };
                 }
@@ -368,7 +390,7 @@ impl Cpu {
                             if lhs == rhs {
                                 self.pc =
                                     (self.pc as i32 + imm as i32) as u32;
-                                return;
+                                return Ok(Outcome::Continue);
                             };
                         }
                         0x1 => {
@@ -383,7 +405,7 @@ impl Cpu {
                             if lhs != rhs {
                                 self.pc =
                                     (self.pc as i32 + imm as i32) as u32;
-                                return;
+                                return Ok(Outcome::Continue);
                             };
                         }
                         0x4 => {
@@ -398,7 +420,7 @@ impl Cpu {
                             if lhs < rhs {
                                 self.pc =
                                     (self.pc as i32 + imm as i32) as u32;
-                                return;
+                                return Ok(Outcome::Continue);
                             };
                         }
                         0x5 => {
@@ -413,7 +435,7 @@ impl Cpu {
                             if lhs >= rhs {
                                 self.pc =
                                     (self.pc as i32 + imm as i32) as u32;
-                                return;
+                                return Ok(Outcome::Continue);
                             };
                         }
                         0x6 => {
@@ -428,7 +450,7 @@ impl Cpu {
                             if lhs < rhs {
                                 self.pc =
                                     (self.pc as i32 + imm as i32) as u32;
-                                return;
+                                return Ok(Outcome::Continue);
                             };
                         }
                         0x7 => {
@@ -443,14 +465,16 @@ impl Cpu {
                             if lhs >= rhs {
                                 self.pc =
                                     (self.pc as i32 + imm as i32) as u32;
-                                return;
+                                return Ok(Outcome::Continue);
                             };
                         }
                         _ => {
-                            panic!(
-                                "execute: unimplemented B funct3: {:#05b}",
-                                funct3
-                            );
+                            return Err(Trap::UnsupportedInstruction {
+                                detail: format!(
+                                    "B-type funct3 {:#05b}",
+                                    funct3
+                                ),
+                            });
                         }
                     };
                 }
@@ -464,13 +488,15 @@ impl Cpu {
                             self.registers[rd] = self.pc + 4;
                             self.pc = (self.pc as i32 + imm as i32) as u32;
                             self.registers[0] = 0;
-                            return;
+                            return Ok(Outcome::Continue);
                         }
                         _ => {
-                            panic!(
-                                "execute: unimplemented J opcode: {:#09b}",
-                                inst.opcode
-                            );
+                            return Err(Trap::UnsupportedInstruction {
+                                detail: format!(
+                                    "J-type opcode {:#09b}",
+                                    inst.opcode
+                                ),
+                            });
                         }
                     };
                 }
@@ -586,14 +612,23 @@ impl Cpu {
                                     );
                                 }
                                 _ => {
-                                    panic!("should never be here.")
+                                    return Err(
+                                        Trap::UnsupportedInstruction {
+                                            detail: format!(
+                                                "shift-right immediate funct7 {:#09b}",
+                                                (imm >> 5) & 0b1111111
+                                            ),
+                                        },
+                                    );
                                 }
                             },
                             _ => {
-                                panic!(
-                                    "unknown I funct3: {:#05b}",
-                                    funct3,
-                                );
+                                return Err(Trap::UnsupportedInstruction {
+                                    detail: format!(
+                                        "I-type funct3 {:#05b}",
+                                        funct3
+                                    ),
+                                });
                             }
                         },
                         0b0000011 => match funct3 {
@@ -666,10 +701,12 @@ impl Cpu {
                                     | (self.memory[index + 1] as u32) << 8;
                             }
                             _ => {
-                                panic!(
-                                    "unknown I funct3: {:#05b}",
-                                    funct3
-                                );
+                                return Err(Trap::UnsupportedInstruction {
+                                    detail: format!(
+                                        "I-type funct3 {:#05b}",
+                                        funct3
+                                    ),
+                                });
                             }
                         },
                         0b1100111 => match funct3 {
@@ -685,78 +722,156 @@ impl Cpu {
                                 self.registers[rd] = pc_copy + 4;
 
                                 self.registers[0] = 0;
-                                return;
+                                return Ok(Outcome::Continue);
                             }
                             _ => {
-                                panic!(
-                                    "unknown I funct3: {:#05b}",
-                                    funct3
-                                );
+                                return Err(Trap::UnsupportedInstruction {
+                                    detail: format!(
+                                        "I-type funct3 {:#05b}",
+                                        funct3
+                                    ),
+                                });
                             }
                         },
                         0b1110011 => match funct3 {
                             0b000 => match imm {
                                 0x0 => {
                                     inst.name = String::from("ecall");
+                                    return match self.registers[17] {
+                                        // `exit` syscall
+                                        93 => Ok(Outcome::Exit(
+                                            self.registers[10] as i32,
+                                        )),
+                                        num => {
+                                            Err(Trap::UnsupportedSyscall {
+                                                num,
+                                            })
+                                        }
+                                    };
                                 }
                                 0x1 => {
                                     inst.name = String::from("ebreak");
+                                    return Err(
+                                        Trap::UnsupportedInstruction {
+                                            detail: String::from(
+                                                "ebreak (no debugger attached)",
+                                            ),
+                                        },
+                                    );
                                 }
+                                // riscv-tests wrap each test in a guard
+                                // sequence: write mepc, read mhartid, mret.
+                                // This emulator has no M-mode or trap
+                                // handling, so mret just falls through to the
+                                // next instruction, which is where the test
+                                // body begins.
                                 0b1100000010 => {
                                     inst.name = String::from("mret");
                                 }
                                 _ => {
-                                    panic!("unknown I imm: {:#014b}", imm)
+                                    return Err(
+                                        Trap::UnsupportedInstruction {
+                                            detail: format!(
+                                                "system imm {:#014b}",
+                                                imm
+                                            ),
+                                        },
+                                    );
                                 }
                             },
+                            // Zicsr. The CSR file exists but starts empty:
+                            // every CSR reads as 0 until something writes it.
+                            // This matches a machine with no state to report.
+                            //
+                            // `imm` arrives sign-extended from 12 bits, so
+                            // mask it back down to the CSR address.
                             0b001 => {
                                 inst.name = format!(
                                     "csrrw   x{},{:#x},x{}",
                                     rd, imm, rs1
                                 );
+                                let csr = (imm & 0xfff) as usize;
+                                let old = self.csrs[csr];
+                                self.csrs[csr] = self.registers[rs1];
+                                self.registers[rd] = old;
                             }
                             0b010 => {
                                 inst.name = format!(
                                     "csrrs   x{},{:#x},x{}",
                                     rd, imm, rs1
                                 );
+                                let csr = (imm & 0xfff) as usize;
+                                let old = self.csrs[csr];
+                                // rs1 == x0 means "read only, do not write".
+                                if rs1 != 0 {
+                                    self.csrs[csr] = old | self.registers[rs1];
+                                }
+                                self.registers[rd] = old;
                             }
                             0b011 => {
                                 inst.name = format!(
                                     "csrrc   x{},{:#x},x{}",
                                     rd, imm, rs1
                                 );
+                                let csr = (imm & 0xfff) as usize;
+                                let old = self.csrs[csr];
+                                if rs1 != 0 {
+                                    self.csrs[csr] = old & !self.registers[rs1];
+                                }
+                                self.registers[rd] = old;
                             }
                             0b101 => {
                                 inst.name = format!(
                                     "csrrwi  x{},{:#x},{}",
                                     rd, imm, rs1
                                 );
+                                let csr = (imm & 0xfff) as usize;
+                                let old = self.csrs[csr];
+                                self.csrs[csr] = rs1 as u32;
+                                self.registers[rd] = old;
                             }
                             0b110 => {
                                 inst.name = format!(
                                     "csrrsi  x{},{:#x},{}",
                                     rd, imm, rs1
                                 );
+                                let csr = (imm & 0xfff) as usize;
+                                let old = self.csrs[csr];
+                                if rs1 != 0 {
+                                    self.csrs[csr] = old | rs1 as u32;
+                                }
+                                self.registers[rd] = old;
                             }
                             0b111 => {
                                 inst.name = format!(
                                     "csrrci  x{},{:#x},{}",
                                     rd, imm, rs1
                                 );
+                                let csr = (imm & 0xfff) as usize;
+                                let old = self.csrs[csr];
+                                if rs1 != 0 {
+                                    self.csrs[csr] = old & !(rs1 as u32);
+                                }
+                                self.registers[rd] = old;
                             }
                             _ => {
-                                panic!(
-                                    "unknown I funct3: {:#05b}",
-                                    funct3
+                                return Err(
+                                    Trap::UnsupportedInstruction {
+                                        detail: format!(
+                                            "system funct3 {:#05b}",
+                                            funct3
+                                        ),
+                                    },
                                 );
                             }
                         },
                         _ => {
-                            panic!(
-                                "unknown I opcode: {:#09b}",
-                                inst.opcode
-                            );
+                            return Err(Trap::UnsupportedInstruction {
+                                detail: format!(
+                                    "I-type opcode {:#09b}",
+                                    inst.opcode
+                                ),
+                            });
                         }
                     };
                 }
@@ -812,7 +927,12 @@ impl Cpu {
                                 (self.registers[rs2] >> 24 & 0xff) as u8;
                         }
                         _ => {
-                            panic!("unknown S funct3: {:#05b}", funct3);
+                            return Err(Trap::UnsupportedInstruction {
+                                detail: format!(
+                                    "S-type funct3 {:#05b}",
+                                    funct3
+                                ),
+                            });
                         }
                     };
                 }
@@ -831,19 +951,25 @@ impl Cpu {
                             self.registers[rd] = self.pc + (imm << 12);
                         }
                         _ => {
-                            panic!(
-                                "unknown U opcode: {:#09b}",
-                                inst.opcode
-                            );
+                            return Err(Trap::UnsupportedInstruction {
+                                detail: format!(
+                                    "U-type opcode {:#09b}",
+                                    inst.opcode
+                                ),
+                            });
                         }
                     };
                 }
             }
             InstTypeName::Fence => inst.name = String::from("fence"),
-            InstTypeName::Unimp => inst.name = String::from("unimp"),
+            InstTypeName::Unimp => {
+                inst.name = String::from("unimp");
+                return Err(Trap::Unimplemented);
+            }
         }
         self.registers[0] = 0;
         self.pc += 4;
+        Ok(Outcome::Continue)
     }
 
     fn command_handler(&mut self, com: &str) {
@@ -911,7 +1037,24 @@ impl Cpu {
             let pc_copy = self.pc;
 
             if (&*buf).is_empty() {
-                self.execute(&mut inst);
+                match self.execute(&mut inst) {
+                    Ok(Outcome::Continue) => {}
+                    Ok(Outcome::Exit(code)) => {
+                        println!(
+                            "Program exited with exit code: {}",
+                            code
+                        );
+                        ret = code;
+                        break;
+                    }
+                    Err(trap) => {
+                        if args.debug {
+                            println!("{}", trap.message());
+                        }
+                        ret = trap.exit_code();
+                        break;
+                    }
+                }
                 if args.registers {
                     self.print_registers(args.aliases);
                 }
@@ -927,34 +1070,6 @@ impl Cpu {
                 }
                 ret = -1;
                 break;
-            }
-            match inst.name.as_str() {
-                "ecall" => match self.registers[17] {
-                    // `exit` syscall
-                    93 => {
-                        ret = self.registers[10] as i32;
-                        println!("Program exited with exit code: {}", ret);
-                        break;
-                    }
-                    _ => {
-                        if args.debug {
-                            println!(
-                                "Unimplemented ECALL: {}",
-                                self.registers[17],
-                            );
-                        }
-                        ret = -2;
-                        break;
-                    }
-                },
-                "unimp" => {
-                    if args.debug {
-                        println!("Reached an unimp instruction.");
-                    }
-                    ret = -3;
-                    break;
-                }
-                _ => {}
             }
         }
         ret
@@ -979,7 +1094,21 @@ impl Cpu {
             let raw_inst = self.fetch();
             let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
-            self.execute(&mut inst);
+            match self.execute(&mut inst) {
+                Ok(Outcome::Continue) => {}
+                Ok(Outcome::Exit(code)) => {
+                    println!("Program exited with exit code: {}", code);
+                    ret = code;
+                    break;
+                }
+                Err(trap) => {
+                    if args.debug {
+                        println!("{}", trap.message());
+                    }
+                    ret = trap.exit_code();
+                    break;
+                }
+            }
             if args.debug {
                 println!(
                     "{:<08x}:   {:08x}          	{}",
@@ -993,34 +1122,6 @@ impl Cpu {
                 }
                 ret = -1;
                 break;
-            }
-            match inst.name.as_str() {
-                "ecall" => match self.registers[17] {
-                    // `exit` syscall
-                    93 => {
-                        ret = self.registers[10] as i32;
-                        println!("Program exited with exit code: {}", ret);
-                        break;
-                    }
-                    _ => {
-                        if args.debug {
-                            println!(
-                                "Unimplemented ECALL: {}",
-                                self.registers[17],
-                            );
-                        }
-                        ret = -2;
-                        break;
-                    }
-                },
-                "unimp" => {
-                    if args.debug {
-                        println!("Reached an unimp instruction.");
-                    }
-                    ret = -3;
-                    break;
-                }
-                _ => {}
             }
         }
         ret

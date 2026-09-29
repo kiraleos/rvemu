@@ -55,7 +55,18 @@ fn main() {
             .into_os_string()
             .to_str()
             .expect("not valid unicode"),
-    );
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("error: {}", e);
+        std::process::exit(1);
+    });
 
-    cpu.run(args);
+    let code = cpu.run(args);
+    // Negative codes are emulator-level failures (bad image, trap, PC
+    // overflow). Map them onto a nonzero exit status so a script can tell
+    // "the guest asked for this" apart from "the guest could not run".
+    if code < 0 {
+        std::process::exit(1);
+    }
+    std::process::exit(code);
 }
