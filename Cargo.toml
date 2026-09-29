@@ -1,16 +1,18 @@
 [package]
 name = "rvemu"
 version = "1.0.0"
-edition = "2021"
-author = "Apostolos Kiraleos"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition = "2024"
+rust-version = "1.85"
+description = "An emulator for the RISC-V RV32I base integer instruction set"
+authors = ["Apostolos Kiraleos"]
+license = "MIT"
 
 [dependencies]
-elf_rs = "0.2.0"
-clap = {version="3.1.5", features=["derive"]}
+clap = { version = "4.6", features = ["derive"] }
+elf_rs = "0.3"
 
+# The emulator's own arithmetic wraps on purpose. Every value a guest program
+# can reach goes through an explicit `wrapping_*`, and the rest is a memory size
+# in kibibytes, where there is no sensible answer to overflow.
 [profile.dev]
 overflow-checks = false
-
-[profile.test]
-overflow-checks = false 
