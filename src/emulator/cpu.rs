@@ -1,7 +1,7 @@
 use super::instruction::{sign_extend, Instruction};
 use elf_rs::{Elf, ElfFile};
 use std::fmt::Write as _;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 
 /// The ABI name of every register, indexed by register number.
 const ALIASES: [&str; 32] = [
@@ -459,18 +459,18 @@ impl Cpu {
         println!("{pc:<08x}:   {word:08x}          \t{disasm}");
     }
 
-    /// Interprets the `ecall` the CPU just retired, if the run loop should stop.
-    fn handle_ecall(&self, debug: bool) -> Option<Outcome> {
+    /// Interprets the `ecall` that was just retired, which always ends the run.
+    fn handle_ecall(&self, debug: bool) -> Outcome {
         // 93 is the only system call this emulator implements: `exit`.
         if self.registers[A7] == 93 {
             let code = self.registers[A0] as i32;
             println!("Program exited with exit code: {code}");
-            return Some(Outcome::Exited(code));
+            return Outcome::Exited(code);
         }
         if debug {
             println!("Unimplemented ECALL: {}", self.registers[A7]);
         }
-        Some(Outcome::UnsupportedSyscall(self.registers[A7]))
+        Outcome::UnsupportedSyscall(self.registers[A7])
     }
 
     fn command_handler(&mut self, com: &str) {
@@ -512,92 +512,67 @@ impl Cpu {
         }
     }
 
-    /// Steps the program under the control of whoever is typing at it.
-    fn run_interactive(&mut self, args: &RunConfig) -> Outcome {
-        if let Some(pc) = args.pc {
+    /// Runs the program until it cannot go any further.
+    pub fn run(&mut self, config: &RunConfig) -> Outcome {
+        if let Some(pc) = config.pc {
             self.pc = pc;
         }
-        if args.stack {
+        if config.stack {
             self.registers[SP] = (self.memory.len() - 1) as u32;
         }
-        let mut buf = String::new();
+
+        // Both are reused for the life of the run, so that neither the prompt
+        // nor the disassembly allocates per instruction.
+        let mut line = String::new();
         let mut disasm = String::new();
         loop {
-            buf.clear();
-            print!("> ");
-            std::io::stdout().flush().unwrap();
-            std::io::stdin().read_line(&mut buf).unwrap();
-            buf.pop();
-            self.command_handler(&buf);
+            // Interactive mode asks before every instruction. With no one to
+            // interrupt, the state is printed before each instruction instead
+            // of after it.
+            let stepped = if config.interactive {
+                line.clear();
+                print!("> ");
+                io::stdout().flush().unwrap();
+                io::stdin().read_line(&mut line).unwrap();
+                line.pop();
+                self.command_handler(&line);
+                // An empty line steps the program; anything else was a command
+                // that has already been handled.
+                line.is_empty()
+            } else {
+                if config.registers {
+                    self.print_registers(config.aliases);
+                }
+                true
+            };
 
-            let raw_inst = self.fetch();
-            let inst = Instruction::decode(raw_inst);
-            let pc_copy = self.pc;
+            let pc = self.pc;
+            let word = self.fetch();
+            let instruction = Instruction::decode(word);
 
-            // An empty line steps the program; anything else was a command that
-            // has already been handled.
             let mut step = None;
-            if buf.is_empty() {
-                step = Some(self.execute(&inst, &mut disasm));
-                if args.registers {
-                    self.print_registers(args.aliases);
+            if stepped {
+                step = Some(self.execute(&instruction, &mut disasm));
+                if config.interactive && config.registers {
+                    self.print_registers(config.aliases);
                 }
-                self.print_trace(pc_copy, raw_inst, &disasm);
+                // Tracing is the point of stepping by hand, so interactive mode
+                // prints it whether or not `--debug` was asked for.
+                if config.debug || config.interactive {
+                    self.print_trace(pc, word, &disasm);
+                }
             }
 
             if (self.pc as usize) >= self.memory.len() {
-                if args.debug {
+                if config.debug {
                     println!("PC overflow.");
                 }
                 return Outcome::PcOverflow;
             }
             match step {
-                Some(Step::Ecall) => return self.handle_ecall(args.debug).unwrap(),
+                Some(Step::Ecall) => return self.handle_ecall(config.debug),
                 Some(Step::Unsupported) => {
-                    if args.debug {
-                        println!("Reached an unimp instruction.");
-                    }
-                    return Outcome::UnsupportedInstruction;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    /// Runs the program from its entry point until it cannot go any further.
-    pub fn run(&mut self, args: &RunConfig) -> Outcome {
-        if args.interactive {
-            return self.run_interactive(args);
-        }
-        if let Some(pc) = args.pc {
-            self.pc = pc;
-        }
-        if args.stack {
-            self.registers[SP] = (self.memory.len() - 1) as u32;
-        }
-        let mut disasm = String::new();
-        loop {
-            if args.registers {
-                self.print_registers(args.aliases);
-            }
-            let raw_inst = self.fetch();
-            let inst = Instruction::decode(raw_inst);
-            let pc_copy = self.pc;
-            let step = self.execute(&inst, &mut disasm);
-            if args.debug {
-                self.print_trace(pc_copy, raw_inst, &disasm);
-            }
-
-            if (self.pc as usize) >= self.memory.len() {
-                if args.debug {
-                    println!("PC overflow.");
-                }
-                return Outcome::PcOverflow;
-            }
-            match step {
-                Step::Ecall => return self.handle_ecall(args.debug).unwrap(),
-                Step::Unsupported => {
-                    if args.debug {
+                    if config.debug {
                         println!("Reached an unimp instruction.");
                     }
                     return Outcome::UnsupportedInstruction;
@@ -607,6 +582,7 @@ impl Cpu {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
