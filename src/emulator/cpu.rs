@@ -24,8 +24,9 @@ const A0: usize = 10;
 /// `x17`, the register holding the system call number.
 const A7: usize = 17;
 
-/// Every RV32I instruction is four bytes wide.
-const INSTRUCTION_SIZE: usize = 4;
+/// Every RV32I instruction is four bytes wide, which is also the width of an
+/// address on RV32I.
+const INSTRUCTION_SIZE: u32 = 4;
 
 /// Memory is sized in kibibytes on the command line.
 const KIB: usize = 1024;
@@ -112,6 +113,48 @@ impl error::Error for LoadError {
         match self {
             LoadError::Io(err) => Some(err),
             _ => None,
+        }
+    }
+}
+
+/// Prints one line of the `--debug` trace: where the instruction was, what it
+/// encoded as, and what it meant.
+fn print_trace(pc: u32, word: u32, disasm: &str) {
+    println!("{pc:<08x}:   {word:08x}          \t{disasm}");
+}
+
+/// Where the disassembly of an instruction goes.
+///
+/// Only `--debug` and interactive mode ever read it, and formatting it is most
+/// of the cost of executing a simple instruction, so a run nobody is watching
+/// writes nothing at all. The arguments are still assembled at each call site,
+/// because that is what a format string is for; only the formatting is skipped.
+enum Trace<'a> {
+    /// Nobody is looking, so there is nothing to write.
+    Off,
+    /// A disassembly is being collected.
+    On(&'a mut String),
+}
+
+impl Trace<'_> {
+    /// Discards whatever the previous instruction wrote.
+    fn clear(&mut self) {
+        if let Self::On(text) = self {
+            text.clear();
+        }
+    }
+
+    /// Records the disassembly of one instruction.
+    fn write(&mut self, args: fmt::Arguments) {
+        if let Self::On(text) = self {
+            let _ = text.write_fmt(args);
+        }
+    }
+
+    /// Records a disassembly that needs no formatting.
+    fn write_str(&mut self, text: &str) {
+        if let Self::On(buffer) = self {
+            buffer.push_str(text);
         }
     }
 }
@@ -243,16 +286,15 @@ impl Cpu {
 
     /// Reads the instruction word that the program counter points at.
     fn fetch(&self) -> u32 {
-        self.load_bytes::<INSTRUCTION_SIZE>(self.pc)
+        self.load_bytes::<{ INSTRUCTION_SIZE as usize }>(self.pc)
     }
 
     /// Executes `inst`, updating the registers and the program counter.
     ///
-    /// The disassembly that `--debug` prints is written to `disasm`, which the
-    /// caller owns so that the run loop can reuse one allocation instead of
-    /// formatting into a fresh `String` for every instruction.
-    fn execute(&mut self, inst: &Instruction, disasm: &mut String) -> Step {
-        disasm.clear();
+    /// The disassembly that `--debug` prints is written to `trace`.
+    #[allow(clippy::too_many_lines)]
+    fn execute(&mut self, inst: &Instruction, trace: &mut Trace<'_>) -> Step {
+        trace.clear();
 
         // The arms below only have to deal with instructions that redirect
         // control flow; the shared epilogue advances the program counter and
@@ -289,7 +331,7 @@ impl Cpu {
                         panic!("execute: unimplemented R funct3: {other:#05b}")
                     }
                 };
-                let _ = write!(disasm, "{mnemonic:<8}x{rd},x{rs1},x{rs2}");
+                trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},x{rs2}"));
                 self.registers[rd] = value;
                 Step::Next
             }
@@ -320,7 +362,7 @@ impl Cpu {
                                 other => panic!("unknown shift funct7: {other:#09b}"),
                             }
                         };
-                        let _ = write!(disasm, "{mnemonic:<8}x{rd},x{rs1},{shamt:#x}");
+                        trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},{shamt:#x}"));
                         self.registers[rd] = value;
                     }
                     _ => {
@@ -337,15 +379,17 @@ impl Cpu {
                         // sign-extended immediate read as an unsigned value,
                         // and is displayed that way; the other OP-IMM forms
                         // display a signed immediate.
-                        let _ = if funct3 == 0b011 {
-                            write!(disasm, "{mnemonic:<8}x{rd},x{rs1},{imm}")
-                        } else {
-                            write!(disasm, "{mnemonic:<8}x{rd},x{rs1},{}", imm as i32)
-                        };
                         // `addi x0, x0, 0` is the canonical encoding of a nop.
                         if rd == 0 && rs1 == 0 && imm == 0 {
-                            disasm.clear();
-                            disasm.push_str("nop");
+                            trace.write_str("nop");
+                        } else if funct3 == 0b011 {
+                            // `sltiu` compares its register against the
+                            // sign-extended immediate read as an unsigned
+                            // value, and is displayed that way; the other
+                            // OP-IMM forms display a signed immediate.
+                            trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},{imm}"));
+                        } else {
+                            trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},{}", imm as i32));
                         }
                         self.registers[rd] = value;
                     }
@@ -361,23 +405,23 @@ impl Cpu {
                 let address = self.registers[rs1].wrapping_add(imm);
                 match funct3 {
                     0b000 => {
-                        let _ = write!(disasm, "lb      x{rd},{}(x{rs1})", imm as i32);
+                        trace.write(format_args!("lb      x{rd},{}(x{rs1})", imm as i32));
                         self.registers[rd] = sign_extend(self.load_bytes::<1>(address), 8);
                     }
                     0b001 => {
-                        let _ = write!(disasm, "lh      x{rd},{}(x{rs1})", imm as i32);
+                        trace.write(format_args!("lh      x{rd},{}(x{rs1})", imm as i32));
                         self.registers[rd] = sign_extend(self.load_bytes::<2>(address), 16);
                     }
                     0b010 => {
-                        let _ = write!(disasm, "lw      x{rd},{}(x{rs1})", imm as i32);
+                        trace.write(format_args!("lw      x{rd},{}(x{rs1})", imm as i32));
                         self.registers[rd] = self.load_bytes::<4>(address);
                     }
                     0b100 => {
-                        let _ = write!(disasm, "lbu     x{rd},{imm}(x{rs1})");
+                        trace.write(format_args!("lbu     x{rd},{imm}(x{rs1})"));
                         self.registers[rd] = self.load_bytes::<1>(address);
                     }
                     0b101 => {
-                        let _ = write!(disasm, "lhu     x{rd},{imm}(x{rs1})");
+                        trace.write(format_args!("lhu     x{rd},{imm}(x{rs1})"));
                         self.registers[rd] = self.load_bytes::<2>(address);
                     }
                     other => panic!("unknown I funct3: {other:#05b}"),
@@ -407,7 +451,7 @@ impl Cpu {
                     }
                     other => panic!("unknown S funct3: {other:#05b}"),
                 };
-                let _ = write!(disasm, "{mnemonic:<8}x{rs2},{}(x{rs1})", imm as i32);
+                trace.write(format_args!("{mnemonic:<8}x{rs2},{}(x{rs1})", imm as i32));
                 Step::Next
             }
             Instruction::Branch {
@@ -429,7 +473,7 @@ impl Cpu {
                         panic!("execute: unimplemented B funct3: {other:#05b}")
                     }
                 };
-                let _ = write!(disasm, "{mnemonic:<8}x{rs1},x{rs2},{target:08x}");
+                trace.write(format_args!("{mnemonic:<8}x{rs1},x{rs2},{target:08x}"));
                 if taken {
                     self.pc = target as u32;
                     Step::Jump
@@ -438,13 +482,13 @@ impl Cpu {
                 }
             }
             Instruction::Jump { rd, imm } => {
-                let _ = write!(disasm, "jal     x{rd},{imm:08x}");
+                trace.write(format_args!("jal     x{rd},{imm:08x}"));
                 self.registers[rd] = self.pc.wrapping_add(4);
                 self.pc = self.pc.wrapping_add(imm);
                 Step::Jump
             }
             Instruction::JumpRegister { rd, rs1, imm } => {
-                let _ = write!(disasm, "jalr    x{rd},x{rs1},{imm:#x}");
+                trace.write(format_args!("jalr    x{rd},x{rs1},{imm:#x}"));
                 // Read the base before writing rd: `jalr x1, x1, 0` is legal.
                 // The spec requires the low bit of the target to be zero.
                 let target = self.registers[rs1].wrapping_add(imm) & !1;
@@ -453,12 +497,12 @@ impl Cpu {
                 Step::Jump
             }
             Instruction::Lui { rd, imm } => {
-                let _ = write!(disasm, "lui     x{rd},{imm:#x}");
+                trace.write(format_args!("lui     x{rd},{imm:#x}"));
                 self.registers[rd] = imm << 12;
                 Step::Next
             }
             Instruction::Auipc { rd, imm } => {
-                let _ = write!(disasm, "auipc   x{rd},{imm:#x}");
+                trace.write(format_args!("auipc   x{rd},{imm:#x}"));
                 self.registers[rd] = self.pc.wrapping_add(imm << 12);
                 Step::Next
             }
@@ -473,15 +517,15 @@ impl Cpu {
                 // rather than a sign extended one.
                 0b000 => match imm {
                     0x000 => {
-                        disasm.push_str("ecall");
+                        trace.write_str("ecall");
                         Step::Ecall
                     }
                     0x001 => {
-                        disasm.push_str("ebreak");
+                        trace.write_str("ebreak");
                         Step::Next
                     }
                     0b0011_0000_0010 => {
-                        disasm.push_str("mret");
+                        trace.write_str("mret");
                         Step::Next
                     }
                     other => panic!("unknown I imm: {other:#014b}"),
@@ -489,51 +533,46 @@ impl Cpu {
                 // This emulator implements no CSR file, so the CSR instructions
                 // decode and retire without touching any register.
                 0b001 => {
-                    let _ = write!(disasm, "csrrw   x{rd},{imm:#x},x{rs1}");
+                    trace.write(format_args!("csrrw   x{rd},{imm:#x},x{rs1}"));
                     Step::Next
                 }
                 0b010 => {
-                    let _ = write!(disasm, "csrrs   x{rd},{imm:#x},x{rs1}");
+                    trace.write(format_args!("csrrs   x{rd},{imm:#x},x{rs1}"));
                     Step::Next
                 }
                 0b011 => {
-                    let _ = write!(disasm, "csrrc   x{rd},{imm:#x},x{rs1}");
+                    trace.write(format_args!("csrrc   x{rd},{imm:#x},x{rs1}"));
                     Step::Next
                 }
                 0b101 => {
-                    let _ = write!(disasm, "csrrwi  x{rd},{imm:#x},{rs1}");
+                    trace.write(format_args!("csrrwi  x{rd},{imm:#x},{rs1}"));
                     Step::Next
                 }
                 0b110 => {
-                    let _ = write!(disasm, "csrrsi  x{rd},{imm:#x},{rs1}");
+                    trace.write(format_args!("csrrsi  x{rd},{imm:#x},{rs1}"));
                     Step::Next
                 }
                 0b111 => {
-                    let _ = write!(disasm, "csrrci  x{rd},{imm:#x},{rs1}");
+                    trace.write(format_args!("csrrci  x{rd},{imm:#x},{rs1}"));
                     Step::Next
                 }
                 other => panic!("unknown I funct3: {other:#05b}"),
             },
             Instruction::Fence => {
-                disasm.push_str("fence");
+                trace.write_str("fence");
                 Step::Next
             }
             Instruction::Unsupported => {
-                disasm.push_str("unimp");
+                trace.write_str("unimp");
                 Step::Unsupported
             }
         };
 
         self.registers[0] = 0;
         if step != Step::Jump {
-            self.pc = self.pc.wrapping_add(INSTRUCTION_SIZE as u32);
+            self.pc = self.pc.wrapping_add(INSTRUCTION_SIZE);
         }
         step
-    }
-
-    /// Prints one line of the `--debug` trace.
-    fn print_trace(&self, pc: u32, word: u32, disasm: &str) {
-        println!("{pc:<08x}:   {word:08x}          \t{disasm}");
     }
 
     /// Interprets the `ecall` that was just retired, which always ends the run.
@@ -608,6 +647,9 @@ impl Cpu {
         // nor the disassembly allocates per instruction.
         let mut line = String::new();
         let mut disasm = String::new();
+        // Tracing is the point of stepping by hand, so interactive mode traces
+        // whether or not `--debug` was asked for.
+        let tracing = config.debug || config.interactive;
         loop {
             // Interactive mode asks before every instruction. With no one to
             // interrupt, the state is printed before each instruction instead
@@ -637,14 +679,16 @@ impl Cpu {
 
             let mut step = None;
             if stepped {
-                step = Some(self.execute(&instruction, &mut disasm));
+                let mut trace = match tracing {
+                    true => Trace::On(&mut disasm),
+                    false => Trace::Off,
+                };
+                step = Some(self.execute(&instruction, &mut trace));
                 if config.interactive && config.registers {
                     self.print_registers(config.aliases);
                 }
-                // Tracing is the point of stepping by hand, so interactive mode
-                // prints it whether or not `--debug` was asked for.
-                if config.debug || config.interactive {
-                    self.print_trace(pc, word, &disasm);
+                if tracing {
+                    print_trace(pc, word, &disasm);
                 }
             }
 
@@ -708,7 +752,8 @@ mod tests {
             self.poke(0, &word.to_le_bytes());
             self.cpu.pc = 0;
             let instruction = Instruction::decode(word);
-            self.cpu.execute(&instruction, &mut self.disasm)
+            self.cpu
+                .execute(&instruction, &mut Trace::On(&mut self.disasm))
         }
 
         /// Executes an instruction and checks the resulting program counter.

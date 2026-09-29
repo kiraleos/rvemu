@@ -69,6 +69,8 @@ fn main() -> ExitCode {
     };
 
     match cpu.run(&config) {
+        // A process exit status is a byte, and a program that exits with more
+        // than 255 is truncated the same way a shell would report it.
         Outcome::Exited(code) => ExitCode::from(code as u8),
         _ => ExitCode::FAILURE,
     }

@@ -1,3 +1,8 @@
+// Sign extension is a reinterpretation of a bit pattern, not a conversion of a
+// number, and the encoders below turn signed offsets into the unsigned fields
+// that hold them. Both are what the encodings are for.
+#![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+
 //! Decoding of RV32I instruction words.
 //!
 //! [`Instruction::decode`] is a pure function from a 32-bit word to the fields
@@ -17,7 +22,7 @@
 /// `pc.wrapping_add(imm)` computes a target address directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instruction {
-    /// `OP` (0b011_0011): register-register arithmetic and logic.
+    /// `OP` (`0b011_0011`): register-register arithmetic and logic.
     R {
         rd: usize,
         funct3: u32,
@@ -25,43 +30,43 @@ pub enum Instruction {
         rs2: usize,
         funct7: u32,
     },
-    /// `OP-IMM` (0b001_0011): register-immediate arithmetic and logic.
+    /// `OP-IMM` (`0b001_0011`): register-immediate arithmetic and logic.
     OpImm {
         rd: usize,
         funct3: u32,
         rs1: usize,
         imm: u32,
     },
-    /// `LOAD` (0b000_0011): load from memory.
+    /// `LOAD` (`0b000_0011`): load from memory.
     Load {
         rd: usize,
         funct3: u32,
         rs1: usize,
         imm: u32,
     },
-    /// `STORE` (0b010_0011): store to memory.
+    /// `STORE` (`0b010_0011`): store to memory.
     Store {
         imm: u32,
         funct3: u32,
         rs1: usize,
         rs2: usize,
     },
-    /// `BRANCH` (0b110_0011): conditional branch.
+    /// `BRANCH` (`0b110_0011`): conditional branch.
     Branch {
         imm: u32,
         funct3: u32,
         rs1: usize,
         rs2: usize,
     },
-    /// `JAL` (0b110_1111): jump and link.
+    /// `JAL` (`0b110_1111`): jump and link.
     Jump { rd: usize, imm: u32 },
-    /// `JALR` (0b110_0111): jump and link register.
+    /// `JALR` (`0b110_0111`): jump and link register.
     JumpRegister { rd: usize, rs1: usize, imm: u32 },
-    /// `LUI` (0b011_0111): load the upper 20 bits of an immediate.
+    /// `LUI` (`0b011_0111`): load the upper 20 bits of an immediate.
     Lui { rd: usize, imm: u32 },
-    /// `AUIPC` (0b001_0111): add the upper 20 bits of an immediate to the pc.
+    /// `AUIPC` (`0b001_0111`): add the upper 20 bits of an immediate to the pc.
     Auipc { rd: usize, imm: u32 },
-    /// `SYSTEM` (0b111_0011): `ecall`, `ebreak`, `mret` and the CSR
+    /// `SYSTEM` (`0b111_0011`): `ecall`, `ebreak`, `mret` and the CSR
     /// instructions. This emulator has no CSRs, so the CSR forms decode but
     /// do nothing.
     System {
@@ -70,7 +75,7 @@ pub enum Instruction {
         rs1: usize,
         imm: u32,
     },
-    /// `MISC-MEM` (0b000_1111): `fence` and `fence.i`. Both are no-ops on a
+    /// `MISC-MEM` (`0b000_1111`): `fence` and `fence.i`. Both are no-ops on a
     /// single hart with no devices to order against.
     Fence,
     /// Not a valid RV32I encoding, or one this emulator refuses to run.
@@ -114,6 +119,7 @@ impl Instruction {
     /// Field values that are individually invalid (an unknown `funct3`, say)
     /// are *not* rejected here; they are reported when the instruction is
     /// executed, which keeps this function a plain description of the encoding.
+    #[must_use]
     pub fn decode(inst: u32) -> Self {
         if inst == 0 || inst == WFI {
             return Instruction::Unsupported;
@@ -206,6 +212,11 @@ impl Instruction {
 /// `bits` is the width of the *encoded* field, which is not the same as the
 /// width of the immediate it holds: a B-type immediate is assembled into
 /// bits 12..1 but is only 13 bits wide, while the bits in between are zero.
+///
+/// # Panics
+///
+/// If `bits` is zero or greater than 32.
+#[must_use]
 pub fn sign_extend(value: u32, bits: u32) -> u32 {
     assert!(bits > 0 && bits <= 32, "bit width out of range: {bits}");
     (((value << (32 - bits)) as i32) >> (32 - bits)) as u32
