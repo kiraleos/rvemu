@@ -73,6 +73,12 @@ impl Cpu {
             }
         }
         let raw_data: Vec<u8> = elf_buf.into_iter().collect();
+        if raw_data.len() > self.memory.len() {
+            return Err(LoadError::Memory {
+                needed: raw_data.len(),
+                available: self.memory.len(),
+            });
+        }
         self.memory[..raw_data.len()].copy_from_slice(&raw_data);
         Ok(())
     }
@@ -101,12 +107,79 @@ impl Cpu {
         println!("{}", strbuilder);
     }
 
-    fn fetch(&self) -> u32 {
-        let index = self.pc as usize;
-        self.memory[index] as u32
-            | ((self.memory[index + 1]) as u32) << 8
-            | ((self.memory[index + 2]) as u32) << 16
-            | ((self.memory[index + 3]) as u32) << 24
+    /// Check that `width` bytes starting at `addr` lie inside emulated memory.
+    fn check_bounds(&self, addr: u32, width: u32) -> Result<usize, Trap> {
+        let start = addr as usize;
+        let end = start.saturating_add(width as usize);
+        if end > self.memory.len() {
+            return Err(Trap::AccessFault {
+                addr: addr as u64,
+                width,
+            });
+        }
+        Ok(start)
+    }
+
+    /// Read a little-endian word, trapping rather than panicking if the
+    /// access runs off the end of memory.
+    fn read32(&self, addr: u32) -> Result<u32, Trap> {
+        let i = self.check_bounds(addr, 4)?;
+        Ok(self.memory[i] as u32
+            | (self.memory[i + 1] as u32) << 8
+            | (self.memory[i + 2] as u32) << 16
+            | (self.memory[i + 3] as u32) << 24)
+    }
+
+    /// Read a little-endian half-word.
+    fn read16(&self, addr: u32) -> Result<u32, Trap> {
+        let i = self.check_bounds(addr, 2)?;
+        Ok(self.memory[i] as u32 | (self.memory[i + 1] as u32) << 8)
+    }
+
+    /// Read a single byte.
+    fn read8(&self, addr: u32) -> Result<u32, Trap> {
+        let i = self.check_bounds(addr, 1)?;
+        Ok(self.memory[i] as u32)
+    }
+
+    /// Write a little-endian word, trapping if out of bounds.
+    fn write32(&mut self, addr: u32, value: u32) -> Result<(), Trap> {
+        let i = self.check_bounds(addr, 4)?;
+        self.memory[i] = value as u8;
+        self.memory[i + 1] = (value >> 8) as u8;
+        self.memory[i + 2] = (value >> 16) as u8;
+        self.memory[i + 3] = (value >> 24) as u8;
+        Ok(())
+    }
+
+    /// Write a little-endian half-word.
+    fn write16(&mut self, addr: u32, value: u32) -> Result<(), Trap> {
+        let i = self.check_bounds(addr, 2)?;
+        self.memory[i] = value as u8;
+        self.memory[i + 1] = (value >> 8) as u8;
+        Ok(())
+    }
+
+    /// Write a single byte.
+    fn write8(&mut self, addr: u32, value: u32) -> Result<(), Trap> {
+        let i = self.check_bounds(addr, 1)?;
+        self.memory[i] = value as u8;
+        Ok(())
+    }
+
+    /// Compute a load/store effective address.
+    ///
+    /// RV32 specifies that address arithmetic wraps modulo 2^32, so this
+    /// deliberately uses `wrapping_add` rather than a checked add: a guest
+    /// computing `0xffffe000 + 0x2000` is asking for address `0x0`, not
+    /// asking to trap. Whether the result is actually in bounds is decided
+    /// by `check_bounds`.
+    fn effective_address(&self, base: u32, offset: u32) -> u32 {
+        base.wrapping_add(offset)
+    }
+
+    fn fetch(&self) -> Result<u32, Trap> {
+        self.read32(self.pc)
     }
 
     fn decode(&self, inst: u32) -> Instruction {
@@ -637,68 +710,64 @@ impl Cpu {
                                     "lb      x{},{}(x{})",
                                     rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1]
-                                    + Cpu::sign_extend(imm, 12))
-                                    as usize;
-                                self.registers[rd] = Cpu::sign_extend(
-                                    self.memory[index] as u32,
-                                    8,
-                                );
+                                let addr =
+                                    self.effective_address(
+                                        self.registers[rs1],
+                                        imm,
+                                    );
+                                let byte = self.read8(addr)?;
+                                self.registers[rd] =
+                                    Cpu::sign_extend(byte, 8);
                             }
                             0x1 => {
                                 inst.name = format!(
                                     "lh      x{},{}(x{})",
                                     rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1]
-                                    + Cpu::sign_extend(imm, 12))
-                                    as usize;
-                                let half_word = self.memory[index] as u32
-                                    | (self.memory[index + 1] as u32) << 8;
+                                let addr =
+                                    self.effective_address(
+                                        self.registers[rs1],
+                                        imm,
+                                    );
+                                let half_word = self.read16(addr)?;
                                 self.registers[rd] =
-                                    Cpu::sign_extend(half_word as u32, 16);
+                                    Cpu::sign_extend(half_word, 16);
                             }
                             0x2 => {
                                 inst.name = format!(
                                     "lw      x{},{}(x{})",
                                     rd, imm as i32, rs1
                                 );
-                                let index = (self.registers[rs1]
-                                    + Cpu::sign_extend(imm, 12))
-                                    as usize;
-
-                                self.registers[rd] = self.memory[index]
-                                    as u32
-                                    | ((self.memory[index + 1]) as u32)
-                                        << 8
-                                    | ((self.memory[index + 2]) as u32)
-                                        << 16
-                                    | ((self.memory[index + 3]) as u32)
-                                        << 24;
+                                let addr =
+                                    self.effective_address(
+                                        self.registers[rs1],
+                                        imm,
+                                    );
+                                self.registers[rd] = self.read32(addr)?;
                             }
                             0x4 => {
                                 inst.name = format!(
                                     "lbu     x{},{}(x{})",
                                     rd, imm, rs1
                                 );
-                                let index = (self.registers[rs1]
-                                    + Cpu::sign_extend(imm, 12))
-                                    as usize;
-                                self.registers[rd] =
-                                    self.memory[index] as u32;
+                                let addr =
+                                    self.effective_address(
+                                        self.registers[rs1],
+                                        imm,
+                                    );
+                                self.registers[rd] = self.read8(addr)?;
                             }
                             0x5 => {
                                 inst.name = format!(
                                     "lhu     x{},{}(x{})",
                                     rd, imm, rs1
                                 );
-                                let index = (self.registers[rs1]
-                                    + Cpu::sign_extend(imm, 12))
-                                    as usize;
-
-                                self.registers[rd] = self.memory[index]
-                                    as u32
-                                    | (self.memory[index + 1] as u32) << 8;
+                                let addr =
+                                    self.effective_address(
+                                        self.registers[rs1],
+                                        imm,
+                                    );
+                                self.registers[rd] = self.read16(addr)?;
                             }
                             _ => {
                                 return Err(Trap::UnsupportedInstruction {
@@ -890,41 +959,33 @@ impl Cpu {
                                 "sb      x{},{}(x{})",
                                 rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1]
-                                + Cpu::sign_extend(imm, 12))
-                                as usize;
-                            self.memory[index] =
-                                (self.registers[rs2] & 0xff) as u8;
+                            let addr = self.effective_address(
+                                self.registers[rs1],
+                                imm,
+                            );
+                            self.write8(addr, self.registers[rs2])?;
                         }
                         0x1 => {
                             inst.name = format!(
                                 "sh      x{},{}(x{})",
                                 rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1]
-                                + Cpu::sign_extend(imm, 12))
-                                as usize;
-                            self.memory[index] =
-                                (self.registers[rs2] & 0xff) as u8;
-                            self.memory[index + 1] =
-                                (self.registers[rs2] >> 8 & 0xff) as u8;
+                            let addr = self.effective_address(
+                                self.registers[rs1],
+                                imm,
+                            );
+                            self.write16(addr, self.registers[rs2])?;
                         }
                         0x2 => {
                             inst.name = format!(
                                 "sw      x{},{}(x{})",
                                 rs2, imm as i32, rs1
                             );
-                            let index = (self.registers[rs1]
-                                + Cpu::sign_extend(imm, 12))
-                                as usize;
-                            self.memory[index] =
-                                (self.registers[rs2] & 0xff) as u8;
-                            self.memory[index + 1] =
-                                (self.registers[rs2] >> 8 & 0xff) as u8;
-                            self.memory[index + 2] =
-                                (self.registers[rs2] >> 16 & 0xff) as u8;
-                            self.memory[index + 3] =
-                                (self.registers[rs2] >> 24 & 0xff) as u8;
+                            let addr = self.effective_address(
+                                self.registers[rs1],
+                                imm,
+                            );
+                            self.write32(addr, self.registers[rs2])?;
                         }
                         _ => {
                             return Err(Trap::UnsupportedInstruction {
@@ -977,34 +1038,36 @@ impl Cpu {
             return;
         }
         let tokens: Vec<&str> = com.split(' ').collect();
+        if !matches!(tokens[0], "mem" | "reg") {
+            println!("Unknown command: {}", tokens[0]);
+            return;
+        }
+        if tokens.len() < 2 {
+            println!("Usage: {} <argument>", tokens[0]);
+            return;
+        }
         match tokens[0] {
             "mem" => {
-                let addr = usize::from_str_radix(tokens[1], 16);
+                let addr = u32::from_str_radix(tokens[1], 16);
                 match addr {
-                    Ok(addr) => {
-                        if addr + 3 > self.memory.len() - 1 {
-                            println!("bad argument: memory out of bounds");
-                            return;
+                    Ok(addr) => match self.read32(addr) {
+                        Ok(chunk) => println!("{:#010x}", chunk),
+                        Err(_) => {
+                            println!("bad argument: memory out of bounds")
                         }
-                        let chunk = self.memory[addr] as u32
-                            | (self.memory[addr + 1] as u32) << 8
-                            | (self.memory[addr + 2] as u32) << 16
-                            | (self.memory[addr + 3] as u32) << 24;
-                        println!("{:#010x}", chunk)
-                    }
+                    },
                     Err(err) => println!("bad argument: {}", err),
                 }
             }
             "reg" => {
                 let reg = tokens[1].parse::<usize>();
                 match reg {
-                    Ok(reg) => {
-                        if reg > self.registers.len() - 1 {
-                            println!("bad argument: no such register");
-                            return;
+                    Ok(reg) => match self.registers.get(reg) {
+                        Some(value) => println!("{:#x}", value),
+                        None => {
+                            println!("bad argument: no such register")
                         }
-                        println!("{:#x}", self.registers[reg])
-                    }
+                    },
                     Err(err) => println!("bad argument: {}", err),
                 }
             }
@@ -1032,11 +1095,20 @@ impl Cpu {
             buf.pop();
             self.command_handler(&*buf);
 
-            let raw_inst = self.fetch();
-            let mut inst: Instruction = self.decode(raw_inst);
-            let pc_copy = self.pc;
-
             if (&*buf).is_empty() {
+                let raw_inst = match self.fetch() {
+                    Ok(inst) => inst,
+                    Err(trap) => {
+                        if args.debug {
+                            println!("{}", trap.message());
+                        }
+                        ret = trap.exit_code();
+                        break;
+                    }
+                };
+                let mut inst: Instruction = self.decode(raw_inst);
+                let pc_copy = self.pc;
+
                 match self.execute(&mut inst) {
                     Ok(Outcome::Continue) => {}
                     Ok(Outcome::Exit(code)) => {
@@ -1063,14 +1135,6 @@ impl Cpu {
                     pc_copy, raw_inst, inst.name
                 );
             }
-
-            if (self.pc as usize) >= self.memory.len() {
-                if args.debug {
-                    println!("PC overflow.");
-                }
-                ret = -1;
-                break;
-            }
         }
         ret
     }
@@ -1091,7 +1155,16 @@ impl Cpu {
             if args.registers {
                 self.print_registers(args.aliases);
             }
-            let raw_inst = self.fetch();
+            let raw_inst = match self.fetch() {
+                Ok(inst) => inst,
+                Err(trap) => {
+                    if args.debug {
+                        println!("{}", trap.message());
+                    }
+                    ret = trap.exit_code();
+                    break;
+                }
+            };
             let mut inst: Instruction = self.decode(raw_inst);
             let pc_copy = self.pc;
             match self.execute(&mut inst) {
@@ -1114,14 +1187,6 @@ impl Cpu {
                     "{:<08x}:   {:08x}          	{}",
                     pc_copy, raw_inst, inst.name
                 );
-            }
-
-            if (self.pc as usize) >= self.memory.len() {
-                if args.debug {
-                    println!("PC overflow.");
-                }
-                ret = -1;
-                break;
             }
         }
         ret

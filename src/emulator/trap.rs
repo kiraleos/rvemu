@@ -13,6 +13,12 @@ pub enum Trap {
     /// The instruction is a known-but-unimplemented placeholder (`0x00000000`
     /// and `0xc0001073`), used by test binaries to signal a trap.
     Unimplemented,
+    /// A load or store landed outside the bounds of emulated memory.
+    ///
+    /// This also covers the program counter: `fetch` reads a word at `pc`, so
+    /// a `pc` that has run off the end of memory surfaces here rather than
+    /// needing a separate check.
+    AccessFault { addr: u64, width: u32 },
 }
 
 impl Trap {
@@ -22,6 +28,7 @@ impl Trap {
             Trap::UnsupportedInstruction { .. } => -2,
             Trap::UnsupportedSyscall { .. } => -2,
             Trap::Unimplemented => -3,
+            Trap::AccessFault { .. } => -4,
         }
     }
 
@@ -35,6 +42,10 @@ impl Trap {
                 format!("Unimplemented ECALL: {}", num)
             }
             Trap::Unimplemented => "Reached an unimp instruction.".to_string(),
+            Trap::AccessFault { addr, width } => format!(
+                "Memory access fault: {} byte(s) at {:#x} is out of bounds",
+                width, addr
+            ),
         }
     }
 }
@@ -48,6 +59,8 @@ pub enum LoadError {
     Elf(String),
     /// The ELF targets a machine this emulator does not implement.
     Arch(String),
+    /// The binary does not fit in the configured amount of memory.
+    Memory { needed: usize, available: usize },
 }
 
 impl std::fmt::Display for LoadError {
@@ -56,6 +69,12 @@ impl std::fmt::Display for LoadError {
             LoadError::Io(msg) => write!(f, "{}", msg),
             LoadError::Elf(msg) => write!(f, "{}", msg),
             LoadError::Arch(msg) => write!(f, "{}", msg),
+            LoadError::Memory { needed, available } => write!(
+                f,
+                "image needs {} bytes but only {} bytes of memory are \
+                 configured; raise it with --mem",
+                needed, available
+            ),
         }
     }
 }
