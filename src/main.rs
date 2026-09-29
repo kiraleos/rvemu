@@ -3,57 +3,57 @@ use rvemu::emulator::cpu::{Cpu, Outcome, RunConfig};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+/// The default size of emulated memory, in kibibytes.
+const DEFAULT_MEMORY_KIB: usize = 16;
+
 ///  A RISC-V emulator, specifically the RV32I base integer instruction set.
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     /// The path of the file to be executed
-    #[clap(parse(from_os_str), value_name = "FILE")]
+    #[arg(value_name = "FILE")]
     file: PathBuf,
 
     /// Print instructions as they are executed
-    #[clap(short, long)]
+    #[arg(short, long)]
     debug: bool,
 
     /// Show register values after each instruction
-    #[clap(short, long)]
+    #[arg(short, long)]
     registers: bool,
 
     /// Show register ABI names or numeric values (x0-x31)
     /// Use with the `--registers` option.
-    #[clap(short, long)]
+    #[arg(short, long)]
     aliases: bool,
 
     /// Interactive mode. Use with either `--registers` and/or `--debug`
-    #[clap(short, long)]
+    #[arg(short, long)]
     interactive: bool,
 
     /// Override ELF entry point, in hexadecimal
-    #[clap(long, value_name = "address")]
-    pc: Option<String>,
+    #[arg(long, value_name = "address", value_parser = parse_hex)]
+    pc: Option<u32>,
 
     /// Provide a stack of "infinite" size.
     /// This sets the stack pointer before execution, so it might cause undefined behaviour.
-    #[clap(short, long)]
+    #[arg(short, long)]
     stack: bool,
 
-    /// Set memory size in KiB (default = 16)
-    #[clap(long, value_name = "size")]
-    mem: Option<String>,
+    /// Set memory size in KiB
+    #[arg(long, value_name = "size", default_value_t = DEFAULT_MEMORY_KIB)]
+    mem: usize,
 }
 
-/// The default size of emulated memory, in kibibytes.
-const DEFAULT_MEMORY_KIB: usize = 16;
+/// Parses a bare hexadecimal number, which is how `--pc` and `mem` are written.
+fn parse_hex(text: &str) -> Result<u32, String> {
+    u32::from_str_radix(text.strip_prefix("0x").unwrap_or(text), 16).map_err(|err| err.to_string())
+}
 
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    let mem = args
-        .mem
-        .as_deref()
-        .and_then(|size| size.parse().ok())
-        .unwrap_or(DEFAULT_MEMORY_KIB);
-    let mut cpu = Cpu::new(mem);
+    let mut cpu = Cpu::new(args.mem);
     if let Err(err) = cpu.load(&args.file) {
         eprintln!("{}: {err}", args.file.display());
         return ExitCode::FAILURE;
@@ -64,10 +64,7 @@ fn main() -> ExitCode {
         registers: args.registers,
         aliases: args.aliases,
         interactive: args.interactive,
-        pc: args
-            .pc
-            .as_deref()
-            .and_then(|pc| u32::from_str_radix(pc, 16).ok()),
+        pc: args.pc,
         stack: args.stack,
     };
 

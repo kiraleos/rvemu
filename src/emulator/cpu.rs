@@ -1,4 +1,4 @@
-use super::instruction::{sign_extend, Instruction};
+use super::instruction::{Instruction, sign_extend};
 use elf_rs::{Elf, ElfFile, ElfMachine};
 use std::error;
 use std::fmt;
@@ -26,6 +26,9 @@ const A7: usize = 17;
 
 /// Every RV32I instruction is four bytes wide.
 const INSTRUCTION_SIZE: usize = 4;
+
+/// Memory is sized in kibibytes on the command line.
+const KIB: usize = 1024;
 
 /// The spec defines a shift amount as the low five bits of its operand, whether
 /// that comes from a register (`sll`) or from an immediate (`slli`).
@@ -142,11 +145,19 @@ fn parse_hex_address(argument: Option<&str>) -> Result<u32, String> {
 }
 
 impl Cpu {
-    /// Creates a CPU with `mem_size` kilobytes of memory and every register
+    /// Creates a CPU with `mem_size_kib` kibibytes of memory and every register
     /// zeroed.
-    pub fn new(mem_size: usize) -> Self {
+    ///
+    /// # Panics
+    ///
+    /// If the size is zero, or too large to address.
+    pub fn new(mem_size_kib: usize) -> Self {
+        let size = mem_size_kib
+            .checked_mul(KIB)
+            .filter(|size| *size != 0)
+            .expect("memory size must be at least one kibibyte and must fit in a usize");
         Cpu {
-            memory: vec![0; mem_size * 1024],
+            memory: vec![0; size],
             registers: [0; REGISTER_COUNT],
             pc: 0,
         }
@@ -588,6 +599,8 @@ impl Cpu {
             self.pc = pc;
         }
         if config.stack {
+            // The highest address in memory, so that a stack grows downwards
+            // into it.
             self.registers[SP] = (self.memory.len() - 1) as u32;
         }
 
