@@ -6,12 +6,20 @@ This emulator does not provide any kernel or OS, so programs that expect a kerne
 The pre-compiled test binaries are included in this repo. The tests are built from [riscv-tests](https://github.com/riscv/riscv-tests). All the tests pass, so every RV32I instruction works as per the specification.
 
 ```
-$ cargo test -q
+$ cargo test
 
-running 39 tests
-.......................................
-test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+running 32 tests
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 ```
+
+The 32 unit tests cover instruction decoding and execution, the 2 integration
+tests run every program in `tests/`, and the last one is this file's example.
 
 ## Build & Run
 You need `rust` and `cargo` installed in order to build the emulator.
@@ -26,37 +34,40 @@ $ cargo test
 ```
 ## Usage
 ```
-USAGE:
-    rvemu [OPTIONS] <FILE>
+Usage: rvemu [OPTIONS] <FILE>
 
-ARGS:
-    <FILE>    The path of the file to be executed
+Arguments:
+  <FILE>  The path of the file to be executed
 
-OPTIONS:
-    -a, --aliases         Show register ABI names or numeric values (x0-x31) Use with the
-                          `--registers` option
-    -d, --debug           Print instructions as they are executed
-    -h, --help            Print help information
-    -i, --interactive     Interactive mode. Use with either `--registers` and/or `--debug`
-        --mem <size>      Set memory size in KiB (default = 16KiB)
-        --pc <address>    Override ELF entry point
-    -r, --registers       Show register values after each instruction
-    -s, --stack           Provide a stack of "infinite" size. This sets the stack pointer before
-                          execution, so it might cause undefined behaviour
-    -V, --version         Print version information
+Options:
+  -d, --debug         Print instructions as they are executed
+  -r, --registers     Show register values after each instruction
+  -a, --aliases       Show register ABI names or numeric values (x0-x31) Use with the `--registers` option
+  -i, --interactive   Interactive mode. Use with either `--registers` and/or `--debug`
+      --pc <address>  Override ELF entry point, in hexadecimal
+  -s, --stack         Provide a stack of "infinite" size. This sets the stack pointer before execution, so it might cause undefined behaviour
+      --mem <size>    Set memory size in KiB [default: 16]
+  -h, --help          Print help
+  -V, --version       Print version
 ```
+
+The emulator exits with the status the program passed to `exit`, or with 1 if it
+could not run: if the program ran off the end of memory, made a system call that
+is not implemented, or reached an instruction this emulator does not implement.
+
 ## Interactive mode
 To launch the emulator in interactive mode, pass the `-i` or `--interactive` option.
 
 This mode currently supports 2 commands: 
-* To see the contents of a register:
+* To see the contents of a register (decimal number):
     
     `reg 5`
 * To see the contents of a memory location (physical address in hex):
 
     `mem 0123abcd`
 
-To execute the next instruction just press enter. 
+An empty line executes the next instruction, and the instruction that was
+executed is always printed. 
 ## Example
 ```
 $ cargo run -q -- ./tests/simple --debug --interactive --registers --aliases
@@ -71,7 +82,7 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
   s8: 0x00000000    s9: 0x00000000   s10: 0x00000000   s11: 0x00000000  
   t3: 0x00000000    t4: 0x00000000    t5: 0x00000000    t6: 0x00000000  
 
-00001000:   0480006f            jal     x0,00000048
+00001000:   0480006f           	jal     x0,00000048
 > 
   pc: 0x0000104c
 zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000  
@@ -83,7 +94,7 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
   s8: 0x00000000    s9: 0x00000000   s10: 0x00000000   s11: 0x00000000  
   t3: 0x00000000    t4: 0x00000000    t5: 0x00000000    t6: 0x00000000  
 
-00001048:   00000093            addi    x1,x0,0
+00001048:   00000093           	addi    x1,x0,0
 > reg 2
 0x0
 > mem 104c
@@ -99,9 +110,28 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
   s8: 0x00000000    s9: 0x00000000   s10: 0x00000000   s11: 0x00000000  
   t3: 0x00000000    t4: 0x00000000    t5: 0x00000000    t6: 0x00000000  
 
-0000104c:   00000113            addi    x2,x0,0
+0000104c:   00000113           	addi    x2,x0,0
 > 
 ```
+## Using it as a library
+The emulator is a library with a thin command line wrapper around it, so it can
+be driven from Rust directly:
+
+```rust
+use rvemu::emulator::cpu::{Cpu, Outcome, RunConfig};
+
+let mut cpu = Cpu::new(16);
+cpu.load("tests/simple")?;
+assert_eq!(cpu.run(&RunConfig::default()), Outcome::Exited(0));
+```
+
+## Loading
+The whole file image is copied into memory at the addresses its file offsets
+give it, which is the same as unpacking it segment by segment only when every
+segment's file offset matches its virtual address. That holds for the programs
+this emulator is meant to run, and it means a program built some other way will
+not find its own code, its stack, or its data where it expects them.
+
 ## Cross-compiling C for RISC-V
 You might want to compile your own C code for RISC-V instead of just running the provided tests.
 
@@ -126,10 +156,6 @@ To do that you need to:
 3. Compile it with `riscv64-unknown-elf-gcc fib.c -o fib -nostdlib -march=rv32i -mabi=ilp32`
 4. Run the emulator with `fib` as input
     ```
-    $ time ./rvemu fib --stack
+    $ ./rvemu fib --stack
     Program exited with exit code: 0
-
-    real    0m7.811s
-    user    0m7.811s
-    sys     0m0.000s
     ```
