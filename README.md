@@ -140,30 +140,136 @@ segment's file offset matches its virtual address. That holds for the programs
 this emulator is meant to run, and it means a program built some other way will
 not find its own code, its stack, or its data where it expects them.
 
-## Cross-compiling C for RISC-V
-You might want to compile your own C code for RISC-V instead of just running the provided tests.
+## Writing a program the emulator can run
+There is no kernel and no libc here, so a program is freestanding: it has to
+supply its own entry point, it cannot `printf`, and the only thing the outside
+world can observe is the status it exits with. `--debug`, `--registers` and the
+interactive prompt are how you look at anything else.
 
-To do that you need to: 
-1. Install the [riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain) 
-2. Write your C program (without stdlib). For example:
-    ```c
-    int fib(int n) {
-        if (n <= 1) return n;
-        return fib(n - 1) + fib(n - 2);
-    }
+### Get a RISC-V compiler
+A bare-metal RISC-V GCC is what you want: either a
+[riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
+release, whose binary is called `riscv64-unknown-elf-gcc`, or one of the
+[xPack builds](https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases),
+which unpack into a directory you can add to `PATH` and call `riscv-none-elf-gcc`.
+Everything below was run with the xPack GCC 15.2.0; the two names are the same
+compiler, so substitute whichever you have.
 
-    void _start() {
-        fib(30);
+### Compile and run
+Save this as `fib.c`:
 
-        // exit syscall
-        asm("addi a7,zero,93;"
-            "addi a0,zero,0;"
-            "ecall;");
-    }
-    ```
-3. Compile it with `riscv64-unknown-elf-gcc fib.c -o fib -nostdlib -march=rv32i -mabi=ilp32`
-4. Run the emulator with `fib` as input
-    ```
-    $ ./rvemu fib --stack
-    Program exited with exit code: 0
-    ```
+```c
+/* fib.c -- exits with fib(10), which is 55. */
+static int fib(int n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }
+
+void _start(void)
+{
+    register int status asm("a0") = fib(10);
+    register int number asm("a7") = 93; /* the exit system call */
+    asm volatile("ecall" : : "r"(status), "r"(number) : "memory");
+    __builtin_unreachable();
+}
+```
+
+```
+$ riscv-none-elf-gcc -O1 -march=rv32i -mabi=ilp32 \
+      -nostdlib -nostartfiles -ffreestanding \
+      -T rv32i.ld -o fib fib.c -lgcc
+$ ./rvemu fib --stack
+Program exited with exit code: 55
+$ echo $?
+55
+```
+
+Each flag matters:
+
+- `-march=rv32i -mabi=ilp32` — the base integer set only. Anything beyond it,
+  the compressed instructions in particular, will not decode.
+- `-nostdlib` — no libc. There is no `printf`, `malloc` or `memset`.
+- `-nostartfiles` — no `crt0`, so nothing runs before `_start`.
+- `-ffreestanding` — tells GCC not to assume the C library exists.
+- `-lgcc` — **even with `-nostdlib`**, integer division and modulo still need
+  GCC's runtime helpers (`__divsi3`, `__udivsi3`, ...), which live in libgcc.
+  Without it a program using `/` or `%` fails to link with an undefined
+  reference. Multiplication is fine: there is no `M` instruction for GCC to
+  emit, so it expands `*` into shifts and adds.
+- `-T rv32i.ld` — the linker script from this repository, explained below.
+
+Add `-Wl,--no-warn-rwx-segments` if you want the linker to stop warning about
+the script putting code and data in one loadable segment.
+
+### `--stack` is not optional
+`_start` runs with every register zeroed, so the stack pointer is 0 and the
+first `sw` in a function prologue writes to address -4, which is not memory:
+
+```
+$ ./rvemu fib
+thread 'main' panicked: range start index 4294967292 out of range
+for slice of length 16384
+```
+
+`--stack` points the stack pointer at the top of memory, so a stack can grow
+downwards into it. It applies the pointer once, before the program starts, so
+deep recursion can still run off the bottom. The default memory is 16 KiB, which
+is also the stack; raise it with `--mem` if the program needs more.
+
+### Why the linker script
+The emulator loads the whole file at its *file offsets* and translates the entry
+point through whichever segment contains it. Code GCC generates reaches local
+symbols pc-relatively, so it keeps working wherever it lands — which is why a
+program with nothing but arithmetic runs under the default linker script. But
+anything reached with an **absolute** address — a global, a string literal, a
+`.bss` array — points at the wrong place, and the access lands outside memory:
+
+```c
+static unsigned table[8];
+static const char name[] = "rvemu";
+void _start(void) { /* sums table[] and name[] */ }
+```
+
+```
+$ riscv-none-elf-gcc -O1 -march=rv32i ... -o globals globals.c   # no -T
+$ ./rvemu globals --stack
+thread 'main' panicked: range start index 4294965256 out of range
+for slice of length 16384
+```
+
+`rv32i.ld` starts the image at 0x1000, which makes every virtual address the
+same number as the file offset the loader uses for it. `.bss` has no file
+content and is never loaded, which is fine: memory starts zeroed.
+
+## Seeing what a program did
+The exit status is the program's only output, and a status above 255 is
+truncated to a byte. For anything else, use `ebreak` as a breakpoint and watch
+the register file as the program steps — this is the `globals.c` from above with
+an `ebreak` added just before its `exit`:
+
+```
+$ ./rvemu globals --stack --interactive --registers
+> 
+  pc: 0x00001000
+x0: 0x00000000    x1: 0x00000000    x2: 0x00003fff    x3: 0x00000000
+...
+> 
+00001000:   00001737           	lui     x14,0x1
+...
+0000107c:   00100073           	ebreak
+Program hit a breakpoint at 0x0000107c.
+```
+
+Put an `ebreak` in the program where you want to look:
+
+```c
+    asm volatile("ebreak");   /* a0 holds the checksum here */
+```
+
+`mem <hex address>` and `reg <number>` also work at the prompt, and `--debug`
+traces every instruction as it retires. `ebreak` ends the run, so the register
+file printed after each step is how you read a value out: by the time execution
+reaches the breakpoint, `x10` above holds the checksum, and you can see it in the
+dump printed on the step before.
+
+The only system call the emulator implements is `exit`, selected by `a7` = 93
+with the status in `a0`. Any other system call number stops the run with
+`Unimplemented ECALL`. There is no `write`, so a program cannot print; if you
+want that, the `mem` command at the prompt is the closest thing.
