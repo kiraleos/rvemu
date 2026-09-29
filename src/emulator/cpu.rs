@@ -31,12 +31,21 @@ const REGISTERS_PER_LINE: usize = 4;
 const SP: usize = 2;
 /// `x10`, the first argument register, and where `exit` reads its status.
 const A0: usize = 10;
+/// `x11` and `x12`, the second and third arguments of a system call.
+const A1: usize = 11;
+const A2: usize = 12;
 /// `x17`, the register holding the system call number.
 const A7: usize = 17;
 
-/// The only system call this emulator implements, from the Linux syscall
-/// numbers: `exit`, which takes its status in `a0`.
+/// The system calls this emulator implements, by their Linux numbers.
+const WRITE_SYSCALL: u32 = 64;
 const EXIT_SYSCALL: u32 = 93;
+
+/// What a system call leaves in `a0` when it cannot do what was asked. Any
+/// negative value means failure and a program only has to test the sign; this
+/// is -1 rather than a Linux errno, which would imply an ABI that is not
+/// otherwise implemented here.
+const SYSCALL_ERROR: u32 = u32::MAX;
 
 /// Every RV32I instruction is four bytes wide, which is also the width of an
 /// address on RV32I.
@@ -618,17 +627,51 @@ impl Cpu {
         step
     }
 
-    /// Interprets the `ecall` that was just retired, which always ends the run.
-    fn handle_ecall(&self, debug: bool) -> Outcome {
-        if self.registers[A7] == EXIT_SYSCALL {
-            let code = self.registers[A0] as i32;
-            println!("Program exited with exit code: {code}");
-            return Outcome::Exited(code);
+    /// Services the `ecall` that was just retired, returning the outcome if it
+    /// ended the run.
+    fn handle_ecall(&mut self, debug: bool) -> Option<Outcome> {
+        let number = self.registers[A7];
+        match number {
+            EXIT_SYSCALL => {
+                let code = self.registers[A0] as i32;
+                println!("Program exited with exit code: {code}");
+                Some(Outcome::Exited(code))
+            }
+            // `write(fd, buf, count)`. There is no input, and stderr is not kept
+            // apart from stdout, so every descriptor writes to stdout.
+            WRITE_SYSCALL => {
+                let count = self.registers[A2];
+                self.registers[A0] = match self.guest_bytes(self.registers[A1], count) {
+                    Some(bytes) => {
+                        // The program is about to read its own return value, so
+                        // its output has to be in place before it runs again.
+                        let mut stdout = io::stdout().lock();
+                        stdout.write_all(bytes).expect("stdout is closed");
+                        stdout.flush().expect("stdout is closed");
+                        count
+                    }
+                    // A bad buffer is reported to the program rather than
+                    // aborting the run, which is what a bad load does: a system
+                    // call has a return value to fail in.
+                    None => SYSCALL_ERROR,
+                };
+                None
+            }
+            _ => {
+                if debug {
+                    println!("Unimplemented ECALL: {number}");
+                }
+                Some(Outcome::UnsupportedSyscall(number))
+            }
         }
-        if debug {
-            println!("Unimplemented ECALL: {}", self.registers[A7]);
-        }
-        Outcome::UnsupportedSyscall(self.registers[A7])
+    }
+
+    /// The `count` bytes of memory at `address`, or `None` if that is not all
+    /// inside memory.
+    fn guest_bytes(&self, address: u32, count: u32) -> Option<&[u8]> {
+        let start = address as usize;
+        let end = start.checked_add(count as usize)?;
+        self.memory.get(start..end)
     }
 
     /// Interprets one line of interactive mode input, returning the reply to
@@ -752,7 +795,11 @@ impl Cpu {
                 return Outcome::PcOverflow;
             }
             match step {
-                Some(Step::Ecall) => return self.handle_ecall(config.debug),
+                Some(Step::Ecall) => {
+                    if let Some(outcome) = self.handle_ecall(config.debug) {
+                        return outcome;
+                    }
+                }
                 Some(Step::Breakpoint) => {
                     println!("Program hit a breakpoint at 0x{pc:08x}.");
                     return Outcome::Breakpoint;
@@ -1148,5 +1195,64 @@ mod tests {
         let mut cpu = Cpu::new(1);
         cpu.memory[..4].copy_from_slice(&enc::system(0, 0b000, 0, 0x001).to_le_bytes());
         assert_eq!(cpu.run(&RunConfig::default()), Outcome::Breakpoint);
+    }
+
+    /// A CPU with `text` in memory and a system call set up to run.
+    fn syscall(number: u32, a0: u32, a1: u32, a2: u32, text: &[u8]) -> Cpu {
+        let mut cpu = Cpu::new(1);
+        let start = 0x100;
+        cpu.memory[start..start + text.len()].copy_from_slice(text);
+        cpu.registers[A0] = a0;
+        cpu.registers[A1] = a1;
+        cpu.registers[A2] = a2;
+        cpu.registers[A7] = number;
+        cpu
+    }
+
+    #[test]
+    fn a_guest_read_is_bounded_by_memory() {
+        let cpu = Cpu::new(1);
+        let end = cpu.memory.len() as u32;
+        assert_eq!(cpu.guest_bytes(0x10, 4).map(<[u8]>::len), Some(4));
+        // An empty read at the very end is empty, not out of bounds.
+        assert_eq!(cpu.guest_bytes(end, 0).map(<[u8]>::len), Some(0));
+        // Reaching exactly the end is fine; one byte further is not.
+        assert!(cpu.guest_bytes(end - 4, 4).is_some());
+        assert_eq!(cpu.guest_bytes(end - 4, 5), None);
+        assert_eq!(cpu.guest_bytes(end + 1, 0), None);
+        // A length that would overflow a usize cannot wrap into a valid range.
+        assert_eq!(cpu.guest_bytes(0x10, u32::MAX), None);
+    }
+
+    #[test]
+    fn write_returns_the_number_of_bytes_it_wrote() {
+        let mut cpu = syscall(WRITE_SYSCALL, 1, 0x100, 6, b"hello\n");
+        assert_eq!(cpu.handle_ecall(false), None, "write does not end the run");
+        assert_eq!(cpu.registers[A0], 6);
+    }
+
+    #[test]
+    fn write_reports_a_buffer_outside_memory() {
+        let end = (Cpu::new(1).memory.len() + 0x100) as u32;
+        let mut cpu = syscall(WRITE_SYSCALL, 1, 0x100, 4, b"four");
+        // Straddling the end of memory is as much a fault as starting past it.
+        cpu.registers[A2] = end - 0x100 + 1;
+        assert_eq!(cpu.handle_ecall(false), None);
+        assert_eq!(cpu.registers[A0], SYSCALL_ERROR);
+
+        let mut cpu = syscall(WRITE_SYSCALL, 1, u32::MAX, 1, b"x");
+        assert_eq!(cpu.handle_ecall(false), None);
+        assert_eq!(cpu.registers[A0], SYSCALL_ERROR);
+    }
+
+    #[test]
+    fn exit_ends_the_run_and_an_unknown_call_does_too() {
+        let mut cpu = syscall(EXIT_SYSCALL, 7, 0, 0, b"");
+        assert_eq!(cpu.handle_ecall(false), Some(Outcome::Exited(7)));
+        let mut cpu = syscall(42, 0, 0, 0, b"");
+        assert_eq!(
+            cpu.handle_ecall(false),
+            Some(Outcome::UnsupportedSyscall(42))
+        );
     }
 }

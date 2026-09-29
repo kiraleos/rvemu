@@ -141,10 +141,10 @@ this emulator is meant to run, and it means a program built some other way will
 not find its own code, its stack, or its data where it expects them.
 
 ## Writing a program the emulator can run
-There is no kernel and no libc here, so a program is freestanding: it has to
-supply its own entry point, it cannot `printf`, and the only thing the outside
-world can observe is the status it exits with. `--debug`, `--registers` and the
-interactive prompt are how you look at anything else.
+There is no kernel and no libc here, so a program is freestanding: it supplies
+its own entry point and talks to the outside world through two system calls,
+`write` and `exit`. There is no `printf`, but `write` is enough to print, and
+the [example below](#a-program-that-prints) does.
 
 ### Get a RISC-V compiler
 A bare-metal RISC-V GCC is what you want: either a
@@ -185,7 +185,7 @@ Each flag matters:
 
 - `-march=rv32i -mabi=ilp32` — the base integer set only. Anything beyond it,
   the compressed instructions in particular, will not decode.
-- `-nostdlib` — no libc. There is no `printf`, `malloc` or `memset`.
+- `-nostdlib` — no libc. No `printf`, no `malloc`; see the `write` example.
 - `-nostartfiles` — no `crt0`, so nothing runs before `_start`.
 - `-ffreestanding` — tells GCC not to assume the C library exists.
 - `-lgcc` — **even with `-nostdlib`**, integer division and modulo still need
@@ -197,6 +197,58 @@ Each flag matters:
 
 Add `-Wl,--no-warn-rwx-segments` if you want the linker to stop warning about
 the script putting code and data in one loadable segment.
+
+### A program that prints
+`write` is the Linux system call 64, with the descriptor in `a0`, the address of
+the bytes in `a1` and the count in `a2`. It returns the number of bytes written,
+or -1 if the range is not inside the guest's memory. `exit` is 93, with the
+status in `a0`.
+
+```c
+/* hello.c */
+#define SYS_WRITE 64
+#define SYS_EXIT  93
+
+static long sys_write(int fd, const void *buf, unsigned long len)
+{
+    register long a0 asm("a0") = fd;
+    register const void *a1 asm("a1") = buf;
+    register long a2 asm("a2") = (long)len;
+    register long a7 asm("a7") = SYS_WRITE;
+    __asm__ volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+    return a0;
+}
+
+static void sys_exit(int code)
+{
+    register long a0 asm("a0") = code;
+    register long a7 asm("a7") = SYS_EXIT;
+    __asm__ volatile("ecall" : : "r"(a0), "r"(a7) : "memory");
+    __builtin_unreachable();
+}
+
+void _start(void)
+{
+    const char *hello = "hello, world\n";
+    unsigned n = 0;
+    while (hello[n]) n++;
+    if (sys_write(1, hello, n) < 0)
+        sys_exit(1);
+    sys_exit(0);
+}
+```
+
+```
+$ riscv-none-elf-gcc -O1 -march=rv32i -mabi=ilp32 \
+      -nostdlib -nostartfiles -ffreestanding \
+      -Wl,--no-warn-rwx-segments -T rv32i.ld -o hello hello.c -lgcc
+$ ./rvemu hello --stack
+hello, world
+Program exited with exit code: 0
+```
+
+Wrapping that in a `puts` of your own is usually the first thing to do; `strlen`
+is a loop, since there is no libc to call.
 
 ### `--stack` is not optional
 `_start` runs with every register zeroed, so the stack pointer is 0 and the
@@ -239,10 +291,10 @@ same number as the file offset the loader uses for it. `.bss` has no file
 content and is never loaded, which is fine: memory starts zeroed.
 
 ## Seeing what a program did
-The exit status is the program's only output, and a status above 255 is
-truncated to a byte. For anything else, use `ebreak` as a breakpoint and watch
-the register file as the program steps — this is the `globals.c` from above with
-an `ebreak` added just before its `exit`:
+Beyond what it writes and the status it exits with — a status above 255 is
+truncated to a byte — use `ebreak` as a breakpoint and watch the register file
+as the program steps. This is the `globals.c` from above with an `ebreak` added
+just before its `exit`:
 
 ```
 $ ./rvemu globals --stack --interactive --registers
@@ -269,7 +321,6 @@ file printed after each step is how you read a value out: by the time execution
 reaches the breakpoint, `x10` above holds the checksum, and you can see it in the
 dump printed on the step before.
 
-The only system call the emulator implements is `exit`, selected by `a7` = 93
-with the status in `a0`. Any other system call number stops the run with
-`Unimplemented ECALL`. There is no `write`, so a program cannot print; if you
-want that, the `mem` command at the prompt is the closest thing.
+Any system call number other than `write` and `exit` stops the run with
+`Unimplemented ECALL`. There is no `read`, so a program cannot ask for input,
+and stderr is not kept apart from stdout.
