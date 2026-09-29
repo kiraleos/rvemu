@@ -219,6 +219,109 @@ fn field(inst: u32, shift: u32, width: u32) -> u32 {
     (inst >> shift) & ((1 << width) - 1)
 }
 
+/// Encoders for the instruction formats, so that tests can state instructions
+/// as bit fields instead of as magic numbers.
+#[cfg(test)]
+pub(crate) mod enc {
+    /// R-type, `OP` opcode: `funct7` picks between the paired operations.
+    pub const fn r(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32) -> u32 {
+        (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | 0b011_0011
+    }
+
+    /// I-type, `OP-IMM` opcode.
+    pub const fn op_imm(rd: u32, funct3: u32, rs1: u32, imm: i32) -> u32 {
+        i(0b001_0011, rd, funct3, rs1, imm)
+    }
+
+    /// I-type, `LOAD` opcode.
+    pub const fn load(rd: u32, funct3: u32, rs1: u32, imm: i32) -> u32 {
+        i(0b000_0011, rd, funct3, rs1, imm)
+    }
+
+    /// I-type, `SYSTEM` opcode. `imm` is a plain 12-bit field, not an offset.
+    pub const fn system(rd: u32, funct3: u32, rs1: u32, imm: u32) -> u32 {
+        i(0b111_0011, rd, funct3, rs1, imm as i32)
+    }
+
+    /// I-type, `JALR` opcode.
+    pub const fn jalr(rd: u32, rs1: u32, imm: i32) -> u32 {
+        i(0b110_0111, rd, 0b000, rs1, imm)
+    }
+
+    /// S-type, `STORE` opcode.
+    pub const fn store(funct3: u32, rs1: u32, rs2: u32, imm: i32) -> u32 {
+        let imm = imm as u32;
+        s(0b010_0011, funct3, rs1, rs2, imm)
+    }
+
+    /// B-type, `BRANCH` opcode. The offset is a signed 13-bit even number.
+    pub const fn branch(funct3: u32, rs1: u32, rs2: u32, offset: i32) -> u32 {
+        assert!(
+            offset % 2 == 0 && -4096 <= offset && offset <= 4094,
+            "bad branch offset"
+        );
+        let offset = offset as u32;
+        b(0b110_0011, funct3, rs1, rs2, offset)
+    }
+
+    /// J-type, `JAL` opcode. The offset is a signed 21-bit even number.
+    pub const fn jal(rd: u32, offset: i32) -> u32 {
+        assert!(
+            offset % 2 == 0 && -1_048_576 <= offset && offset <= 1_048_574,
+            "bad jump offset"
+        );
+        j(0b110_1111, rd, offset as u32)
+    }
+
+    /// U-type, `LUI` opcode. `imm` is the 20 bits that go above the low twelve.
+    pub const fn lui(rd: u32, imm: u32) -> u32 {
+        (imm << 12) | (rd << 7) | 0b011_0111
+    }
+
+    /// U-type, `AUIPC` opcode.
+    pub const fn auipc(rd: u32, imm: u32) -> u32 {
+        (imm << 12) | (rd << 7) | 0b001_0111
+    }
+
+    /// `MISC-MEM` opcode, `fence` and `fence.i`.
+    pub const fn fence(funct3: u32) -> u32 {
+        funct3 << 12 | 0b000_1111
+    }
+
+    const fn i(opcode: u32, rd: u32, funct3: u32, rs1: u32, imm: i32) -> u32 {
+        ((imm as u32) << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode
+    }
+
+    const fn s(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: u32) -> u32 {
+        ((imm >> 5) << 25)
+            | (rs2 << 20)
+            | (rs1 << 15)
+            | (funct3 << 12)
+            | ((imm & 0b1_1111) << 7)
+            | opcode
+    }
+
+    const fn b(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: u32) -> u32 {
+        ((imm >> 12) & 1) << 31
+            | ((imm >> 5) & 0b11_1111) << 25
+            | (rs2 << 20)
+            | (rs1 << 15)
+            | (funct3 << 12)
+            | ((imm >> 1) & 0b1111) << 8
+            | ((imm >> 11) & 1) << 7
+            | opcode
+    }
+
+    const fn j(opcode: u32, rd: u32, imm: u32) -> u32 {
+        ((imm >> 20) & 1) << 31
+            | ((imm >> 1) & 0b11_1111_1111) << 21
+            | ((imm >> 11) & 1) << 20
+            | ((imm >> 12) & 0b1111_1111) << 12
+            | (rd << 7)
+            | opcode
+    }
+}
+
 fn opcode(inst: u32) -> u32 {
     field(inst, 0, 7)
 }
@@ -245,59 +348,13 @@ fn funct7(inst: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use super::enc;
     use super::*;
-
-    /// Builds an instruction word from its bit fields, for readable tables.
-    struct Enc;
-
-    impl Enc {
-        const fn r(opcode: u32, rd: u32, funct3: u32, rs1: u32, rs2: u32, funct7: u32) -> u32 {
-            (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode
-        }
-        const fn i(opcode: u32, rd: u32, funct3: u32, rs1: u32, imm: u32) -> u32 {
-            (imm << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode
-        }
-        const fn s(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: u32) -> u32 {
-            ((imm >> 5) << 25)
-                | (rs2 << 20)
-                | (rs1 << 15)
-                | (funct3 << 12)
-                | ((imm & 0x1f) << 7)
-                | opcode
-        }
-        const fn b(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: i32) -> u32 {
-            // A 13-bit signed even offset, so -4096..=4094.
-            assert!(imm % 2 == 0 && -4096 <= imm && imm <= 4094);
-            let imm = imm as u32;
-            ((imm >> 12) & 1) << 31
-                | ((imm >> 5) & 0b11_1111) << 25
-                | (rs2 << 20)
-                | (rs1 << 15)
-                | (funct3 << 12)
-                | ((imm >> 1) & 0b1111) << 8
-                | ((imm >> 11) & 1) << 7
-                | opcode
-        }
-        const fn u(opcode: u32, rd: u32, imm: u32) -> u32 {
-            (imm << 12) | (rd << 7) | opcode
-        }
-        const fn j(opcode: u32, rd: u32, imm: i32) -> u32 {
-            // A 21-bit signed even offset, so -1048576..=1048574.
-            assert!(imm % 2 == 0 && -1_048_576 <= imm && imm <= 1_048_574);
-            let imm = imm as u32;
-            ((imm >> 20) & 1) << 31
-                | ((imm >> 1) & 0b11_1111_1111) << 21
-                | ((imm >> 11) & 1) << 20
-                | ((imm >> 12) & 0xff) << 12
-                | (rd << 7)
-                | opcode
-        }
-    }
 
     #[test]
     fn r_type_fields() {
         assert_eq!(
-            Instruction::decode(Enc::r(0b011_0011, 3, 0b000, 1, 2, 0b000_0000)),
+            Instruction::decode(enc::r(0, 2, 1, 0b000, 3)),
             Instruction::R {
                 rd: 3,
                 funct3: 0,
@@ -307,7 +364,7 @@ mod tests {
             }
         );
         assert_eq!(
-            Instruction::decode(Enc::r(0b011_0011, 31, 0b111, 0, 0, 0b010_0000)),
+            Instruction::decode(enc::r(0b010_0000, 0, 0, 0b111, 31)),
             Instruction::R {
                 rd: 31,
                 funct3: 7,
@@ -321,7 +378,7 @@ mod tests {
     #[test]
     fn i_type_immediate_is_sign_extended() {
         // addi x1, x0, -1
-        let inst = Enc::i(0b001_0011, 1, 0b000, 0, -1i32 as u32);
+        let inst = enc::op_imm(1, 0b000, 0, -1);
         assert_eq!(
             Instruction::decode(inst),
             Instruction::OpImm {
@@ -333,7 +390,7 @@ mod tests {
         );
         // The most negative 12-bit immediate must not wrap to a positive.
         assert_eq!(
-            Instruction::decode(Enc::i(0b001_0011, 1, 0b000, 0, 0x800)),
+            Instruction::decode(enc::op_imm(1, 0b000, 0, 0x800)),
             Instruction::OpImm {
                 rd: 1,
                 funct3: 0,
@@ -343,7 +400,7 @@ mod tests {
         );
         // ...and the most positive one must not sign extend.
         assert_eq!(
-            Instruction::decode(Enc::i(0b001_0011, 1, 0b000, 0, 0x7ff)),
+            Instruction::decode(enc::op_imm(1, 0b000, 0, 0x7ff)),
             Instruction::OpImm {
                 rd: 1,
                 funct3: 0,
@@ -357,7 +414,7 @@ mod tests {
     fn s_type_immediate() {
         // sw x2, -4(x1)
         assert_eq!(
-            Instruction::decode(Enc::s(0b010_0011, 0b010, 1, 2, -4i32 as u32)),
+            Instruction::decode(enc::store(0b010, 1, 2, -4)),
             Instruction::Store {
                 imm: 0xffff_fffc,
                 funct3: 2,
@@ -367,7 +424,7 @@ mod tests {
         );
         // sb x2, 2047(x1): the largest positive S-type immediate.
         assert_eq!(
-            Instruction::decode(Enc::s(0b010_0011, 0b000, 1, 2, 2047)),
+            Instruction::decode(enc::store(0b000, 1, 2, 2047)),
             Instruction::Store {
                 imm: 2047,
                 funct3: 0,
@@ -381,7 +438,7 @@ mod tests {
     fn b_type_immediate() {
         // beq x1, x2, -8
         assert_eq!(
-            Instruction::decode(Enc::b(0b110_0011, 0b000, 1, 2, -8)),
+            Instruction::decode(enc::branch(0b000, 1, 2, -8)),
             Instruction::Branch {
                 imm: 0xffff_fff8,
                 funct3: 0,
@@ -416,7 +473,7 @@ mod tests {
     fn branch_immediate_survives_decoding() {
         for offset in BRANCH_OFFSETS {
             assert_eq!(
-                imm_of(Instruction::decode(Enc::b(0b110_0011, 0b000, 1, 2, offset))),
+                imm_of(Instruction::decode(enc::branch(0b000, 1, 2, offset))),
                 offset as u32,
                 "branch offset {offset:#x}"
             );
@@ -427,7 +484,7 @@ mod tests {
     fn jump_immediate_survives_decoding() {
         for offset in JUMP_OFFSETS {
             assert_eq!(
-                imm_of(Instruction::decode(Enc::j(0b110_1111, 1, offset))),
+                imm_of(Instruction::decode(enc::jal(1, offset))),
                 offset as u32,
                 "jump offset {offset:#x}"
             );
@@ -438,7 +495,7 @@ mod tests {
     fn u_type_immediate() {
         // lui x5, 0xabcde
         assert_eq!(
-            Instruction::decode(Enc::u(0b011_0111, 5, 0xabcde)),
+            Instruction::decode(enc::lui(5, 0xabcde)),
             Instruction::Lui {
                 rd: 5,
                 imm: 0xabcde
@@ -446,7 +503,7 @@ mod tests {
         );
         // The top of the field must survive.
         assert_eq!(
-            Instruction::decode(Enc::u(0b001_0111, 5, 0xfffff)),
+            Instruction::decode(enc::auipc(5, 0xfffff)),
             Instruction::Auipc {
                 rd: 5,
                 imm: 0xfffff
@@ -456,8 +513,8 @@ mod tests {
 
     #[test]
     fn misc_mem_and_unsupported() {
-        assert_eq!(Instruction::decode(0x0000_000f), Instruction::Fence);
-        assert_eq!(Instruction::decode(0x0000_100f), Instruction::Fence);
+        assert_eq!(Instruction::decode(enc::fence(0b000)), Instruction::Fence);
+        assert_eq!(Instruction::decode(enc::fence(0b001)), Instruction::Fence);
         // A zero word is not a valid instruction.
         assert_eq!(Instruction::decode(0x0000_0000), Instruction::Unsupported);
         // Neither is wfi, which would never return.

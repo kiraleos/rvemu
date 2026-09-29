@@ -586,3 +586,270 @@ impl Cpu {
         ret
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::emulator::instruction::enc;
+
+    /// A CPU set up to execute one instruction at a time, so that a test can
+    /// state an instruction and look at the machine state it leaves behind.
+    struct Harness {
+        cpu: Cpu,
+        disasm: String,
+    }
+
+    impl Harness {
+        /// A CPU with a kilobyte of memory, every register zeroed and the
+        /// program counter at zero.
+        fn new() -> Self {
+            Harness {
+                cpu: Cpu::new(1),
+                disasm: String::new(),
+            }
+        }
+
+        /// Sets a register, so a test can build up the operands it needs.
+        fn set(&mut self, reg: usize, value: u32) -> &mut Self {
+            self.cpu.registers[reg] = value;
+            self
+        }
+
+        /// Puts `bytes` into memory at `address`, for the load and store tests.
+        fn poke(&mut self, address: usize, bytes: &[u8]) -> &mut Self {
+            self.cpu.memory[address..address + bytes.len()].copy_from_slice(bytes);
+            self
+        }
+
+        /// Executes one instruction word at address zero.
+        fn step(&mut self, word: u32) -> Step {
+            self.poke(0, &word.to_le_bytes());
+            self.cpu.pc = 0;
+            let instruction = Instruction::decode(word);
+            self.cpu.execute(&instruction, &mut self.disasm)
+        }
+
+        /// Executes an instruction and checks the resulting program counter.
+        fn step_to(&mut self, word: u32, expected: Step, pc: u32) -> &mut Self {
+            assert_eq!(self.step(word), expected);
+            assert_eq!(self.cpu.pc, pc, "program counter after {word:#010x}");
+            self
+        }
+
+        /// The value of a register, after checking that `x0` is still zero.
+        fn reg(&self, reg: usize) -> u32 {
+            assert_eq!(self.cpu.registers[0], 0, "x0 was written to");
+            self.cpu.registers[reg]
+        }
+
+        /// The four little-endian bytes at `address`.
+        fn word(&self, address: usize) -> u32 {
+            let mut bytes = [0; 4];
+            bytes.copy_from_slice(&self.cpu.memory[address..address + 4]);
+            u32::from_le_bytes(bytes)
+        }
+
+        /// The disassembly of the instruction that was executed last.
+        fn disasm(&self) -> &str {
+            &self.disasm
+        }
+    }
+
+    #[test]
+    fn register_arithmetic_wraps_instead_of_overflowing() {
+        // add x1, x2, x3 and sub x4, x2, x3 at the extremes of the range.
+        let mut h = Harness::new();
+        h.set(2, u32::MAX).set(3, 1);
+        h.step_to(enc::r(0, 3, 2, 0b000, 1), Step::Next, 4);
+        assert_eq!(h.reg(1), 0, "u32::MAX + 1");
+        h.step_to(enc::r(0b010_0000, 3, 2, 0b000, 4), Step::Next, 4);
+        assert_eq!(h.reg(4), u32::MAX - 1, "u32::MAX - 1");
+    }
+
+    #[test]
+    fn shifts_and_logic() {
+        let mut h = Harness::new();
+        // x3 holds 6, so the shifts below all move by six places.
+        h.set(2, 0b1011).set(3, 0b0110);
+        h.step(enc::r(0, 3, 2, 0b001, 1));
+        assert_eq!(h.reg(1), 0b1011 << 6, "sll by six places");
+
+        h.set(2, 0x8000_0000);
+        h.step(enc::r(0b010_0000, 3, 2, 0b101, 1));
+        assert_eq!(h.reg(1), 0xfe00_0000, "sra keeps the sign bit");
+        h.step(enc::r(0, 3, 2, 0b101, 1));
+        assert_eq!(h.reg(1), 0x0200_0000, "srl moves in zeroes");
+
+        h.set(2, 0b1011).set(3, 0b0110);
+        for (funct3, expected) in [(0b100, 0b1101), (0b110, 0b1111), (0b111, 0b0010)] {
+            h.step(enc::r(0, 3, 2, funct3, 1));
+            assert_eq!(h.reg(1), expected, "funct3 {funct3:#05b}");
+        }
+    }
+
+    #[test]
+    fn set_less_than_compares_signed_and_unsigned() {
+        let mut h = Harness::new();
+        // 0x8000_0000 is negative signed, but the largest unsigned value bar one.
+        h.set(2, 0x8000_0000).set(3, 1);
+        h.step(enc::r(0, 3, 2, 0b010, 1));
+        assert_eq!(h.reg(1), 1, "slt: signed, so the left side is smaller");
+        h.step(enc::r(0, 3, 2, 0b011, 1));
+        assert_eq!(h.reg(1), 0, "sltu: unsigned, so the left side is larger");
+    }
+
+    #[test]
+    fn immediates_are_applied_as_signed_values() {
+        let mut h = Harness::new();
+        h.set(2, 1);
+        h.step(enc::op_imm(1, 0b000, 2, -1));
+        assert_eq!(h.reg(1), 0, "addi 1, -1");
+        // andi with a sign extended immediate reaches into the high bits.
+        h.set(2, 0xffff_ffff);
+        h.step(enc::op_imm(1, 0b111, 2, -2));
+        assert_eq!(h.reg(1), 0xffff_fffe, "andi -1, -2");
+        h.step(enc::op_imm(1, 0b100, 2, -1));
+        assert_eq!(h.reg(1), 0, "xori -1, -1");
+    }
+
+    #[test]
+    fn upper_immediates() {
+        let mut h = Harness::new();
+        h.step(enc::lui(1, 0xabcde));
+        assert_eq!(h.reg(1), 0xabcd_e000);
+        // auipc adds the shifted immediate to this instruction's own pc, which
+        // is zero here, not to the pc it is about to become.
+        h.step_to(enc::auipc(1, 1), Step::Next, 4);
+        assert_eq!(h.reg(1), 0x1000);
+    }
+
+    #[test]
+    fn loads_sign_extend_the_right_number_of_bytes() {
+        // 0x89ab_cdef at address 0x10, loaded by a base register of 0x10.
+        let mut h = Harness::new();
+        h.set(2, 0x10).poke(0x10, &[0xef, 0xcd, 0xab, 0x89]);
+        h.step(enc::load(1, 0b000, 2, 0));
+        assert_eq!(h.reg(1), 0xffff_ffef, "lb");
+        h.step(enc::load(1, 0b100, 2, 0));
+        assert_eq!(h.reg(1), 0x0000_00ef, "lbu");
+        h.step(enc::load(1, 0b001, 2, 0));
+        assert_eq!(h.reg(1), 0xffff_cdef, "lh");
+        h.step(enc::load(1, 0b101, 2, 0));
+        assert_eq!(h.reg(1), 0x0000_cdef, "lhu");
+        h.step(enc::load(1, 0b010, 2, 0));
+        assert_eq!(h.reg(1), 0x89ab_cdef, "lw");
+    }
+
+    #[test]
+    fn loads_apply_their_offset() {
+        let mut h = Harness::new();
+        h.set(2, 0x20).poke(0x1e, &[0x11, 0x22, 0x33, 0x44]);
+        h.step(enc::load(1, 0b010, 2, -2));
+        assert_eq!(h.reg(1), 0x4433_2211, "a negative offset moves down");
+    }
+
+    #[test]
+    fn stores_write_only_their_own_bytes() {
+        let mut h = Harness::new();
+        h.set(2, 0x10).set(3, 0x89ab_cdef);
+        h.poke(0x10, &[0xff; 4]);
+        h.step(enc::store(0b000, 2, 3, 0));
+        assert_eq!(h.word(0x10), 0xffff_ffef, "sb leaves the rest alone");
+        h.step(enc::store(0b001, 2, 3, 0));
+        assert_eq!(h.word(0x10), 0xffff_cdef, "sh writes two bytes");
+        h.step(enc::store(0b010, 2, 3, 0));
+        assert_eq!(h.word(0x10), 0x89ab_cdef, "sw writes all four");
+    }
+
+    #[test]
+    fn branches_move_the_pc_only_when_taken() {
+        let mut h = Harness::new();
+        h.set(2, 7).set(3, 7);
+        h.step_to(enc::branch(0b000, 2, 3, 8), Step::Jump, 8);
+        h.step_to(enc::branch(0b001, 2, 3, 8), Step::Next, 4);
+        // bltu and bgeu compare without sign extension.
+        h.set(2, -1i32 as u32);
+        h.set(3, 1);
+        h.step_to(enc::branch(0b110, 2, 3, 4), Step::Next, 4);
+        h.step_to(enc::branch(0b100, 2, 3, 4), Step::Jump, 4);
+    }
+
+    #[test]
+    fn jal_links_and_jumps() {
+        let mut h = Harness::new();
+        h.step_to(enc::jal(1, 0x1000), Step::Jump, 0x1000);
+        assert_eq!(h.reg(1), 4, "the link register holds the fall-through pc");
+    }
+
+    #[test]
+    fn jalr_links_jumps_and_clears_the_low_bit() {
+        let mut h = Harness::new();
+        h.set(2, 0x1003);
+        h.step_to(enc::jalr(1, 2, 4), Step::Jump, 0x1006);
+        assert_eq!(h.reg(1), 4);
+        h.set(2, 0x1003);
+        h.step_to(enc::jalr(1, 2, 0), Step::Jump, 0x1002);
+    }
+
+    #[test]
+    fn jalr_reads_its_base_before_writing_the_link_register() {
+        // `jalr x1, x1, 0` is a legal way of branching on a register.
+        let mut h = Harness::new();
+        h.set(1, 0x40);
+        h.step_to(enc::jalr(1, 1, 0), Step::Jump, 0x40);
+        assert_eq!(h.reg(1), 4);
+    }
+
+    #[test]
+    fn a_nop_is_a_no_op() {
+        let mut h = Harness::new();
+        h.step_to(enc::op_imm(0, 0b000, 0, 0), Step::Next, 4);
+        assert_eq!(h.disasm(), "nop");
+    }
+
+    #[test]
+    fn ecall_ebreak_and_mret_report_what_the_run_loop_has_to_do() {
+        let mut h = Harness::new();
+        h.step_to(enc::system(0, 0b000, 0, 0x000), Step::Ecall, 4);
+        assert_eq!(h.disasm(), "ecall");
+        h.step_to(enc::system(0, 0b000, 0, 0x001), Step::Next, 4);
+        assert_eq!(h.disasm(), "ebreak");
+        h.step_to(enc::system(0, 0b000, 0, 0x302), Step::Next, 4);
+        assert_eq!(h.disasm(), "mret");
+    }
+
+    #[test]
+    fn fence_is_a_no_op_and_a_zero_word_is_unsupported() {
+        let mut h = Harness::new();
+        h.step_to(enc::fence(0b000), Step::Next, 4);
+        assert_eq!(h.disasm(), "fence");
+        h.step_to(0, Step::Unsupported, 4);
+        assert_eq!(h.disasm(), "unimp");
+    }
+
+    #[test]
+    fn writing_x0_never_changes_it() {
+        let mut h = Harness::new();
+        h.set(2, 5);
+        h.step(enc::r(0, 2, 0, 0b000, 0));
+        assert_eq!(h.reg(0), 0);
+    }
+
+    #[test]
+    fn disassembly_names_the_operands() {
+        let mut h = Harness::new();
+        h.set(2, 0x10).set(3, 0x20);
+        h.step(enc::r(0b010_0000, 3, 2, 0b000, 1));
+        assert_eq!(h.disasm(), "sub     x1,x2,x3");
+        h.step(enc::op_imm(1, 0b000, 2, -4));
+        assert_eq!(h.disasm(), "addi    x1,x2,-4");
+        h.step(enc::load(1, 0b010, 2, -4));
+        assert_eq!(h.disasm(), "lw      x1,-4(x2)");
+        h.step(enc::store(0b010, 2, 3, -4));
+        assert_eq!(h.disasm(), "sw      x3,-4(x2)");
+        h.step(enc::branch(0b000, 2, 3, -8));
+        assert_eq!(h.disasm(), "beq     x2,x3,fffffff8");
+        h.step(enc::lui(1, 0xabcde));
+        assert_eq!(h.disasm(), "lui     x1,0xabcde");
+    }
+}
