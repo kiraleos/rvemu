@@ -54,3 +54,39 @@ fn every_test_program_is_listed() {
     found.sort();
     assert_eq!(found, PROGRAMS);
 }
+
+#[test]
+fn every_test_program_disassembles_as_code_this_emulator_can_execute() {
+    for name in PROGRAMS {
+        let mut cpu = Cpu::new(MEMORY_KIB);
+        cpu.load(program(name)).expect("test program is missing");
+        let listing: Vec<String> = cpu.disassembly().collect();
+        assert!(listing.len() > 2, "{name} listed nothing");
+
+        // A word the listing cannot name is a word this emulator refuses to
+        // execute, and in compiled code there are only two kinds of those: the
+        // zero words a linker pads the end of a segment with, and the `wfi` that
+        // the riscv-tests trampoline spins on once the program has exited.
+        // Anything else would be the disassembler and the decoder disagreeing
+        // about the very programs the emulator is tested on.
+        for line in &listing {
+            if line.ends_with("unimp") {
+                assert!(
+                    line.contains("00000000") || line.contains("c0001073"),
+                    "{name}: {line}"
+                );
+            }
+        }
+
+        // Each program asks the emulator to exit, and the trampoline around it
+        // ends with the `wfi` above.
+        assert!(
+            listing.iter().any(|line| line.ends_with("ecall")),
+            "{name} has no ecall"
+        );
+        assert!(
+            listing.iter().any(|line| line.contains("c0001073")),
+            "{name} has no wfi"
+        );
+    }
+}

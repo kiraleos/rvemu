@@ -5,13 +5,15 @@
 // the lints about them are muted here instead of at each of the sites.
 #![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
 
-use super::instruction::{Instruction, sign_extend};
+use super::disassembly::Disassembly;
+use super::instruction::{Instruction, SHIFT_AMOUNT_MASK, sign_extend};
 use elf_rs::{Elf, ElfFile, ElfMachine};
 use std::error;
 use std::fmt;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Write};
+use std::ops::Range;
 use std::path::Path;
 
 /// The ABI name of every register, indexed by register number.
@@ -53,10 +55,6 @@ const INSTRUCTION_SIZE: u32 = 4;
 
 /// Memory is sized in kibibytes on the command line.
 const KIB: usize = 1024;
-
-/// The spec defines a shift amount as the low five bits of its operand, whether
-/// that comes from a register (`sll`) or from an immediate (`slli`).
-const SHIFT_AMOUNT_MASK: u32 = 0b1_1111;
 
 /// How a program should be run.
 ///
@@ -142,10 +140,13 @@ impl error::Error for LoadError {
     }
 }
 
-/// Prints one line of the `--debug` trace: where the instruction was, what it
-/// encoded as, and what it meant.
-fn print_trace(pc: u32, word: u32, disasm: &str) {
-    println!("{pc:<08x}:   {word:08x}          \t{disasm}");
+/// Fills `line` with the trace line for one instruction: the address it is at,
+/// the word it encoded as, and what it means.
+///
+/// The trace and the listing both go through here, so a line of a trace is a
+/// line of a listing and the two cannot drift apart.
+fn trace_line(line: &mut String, pc: u32, word: u32, disasm: &impl fmt::Display) {
+    let _ = write!(line, "{pc:<08x}:   {word:08x}          \t{disasm}");
 }
 
 /// Where the disassembly of an instruction goes.
@@ -175,13 +176,6 @@ impl Trace<'_> {
             let _ = text.write_fmt(args);
         }
     }
-
-    /// Records a disassembly that needs no formatting.
-    fn write_str(&mut self, text: &str) {
-        if let Self::On(buffer) = self {
-            buffer.push_str(text);
-        }
-    }
 }
 
 /// A RISC-V RV32I CPU, as described by the unprivileged base integer spec.
@@ -189,6 +183,12 @@ pub struct Cpu {
     memory: Vec<u8>,
     registers: [u32; REGISTER_COUNT],
     pc: u32,
+    /// The addresses the loaded image's code occupies, which is what
+    /// [`Cpu::disassembly`] lists. Empty until an image is loaded. These are the
+    /// addresses the emulator gave the bytes rather than the virtual addresses
+    /// the ELF calls them, for the same reason the program counter is: see
+    /// [`Cpu::load`].
+    code: Range<u32>,
 }
 
 /// What executing a single instruction did, as far as the run loop cares.
@@ -234,6 +234,7 @@ impl Cpu {
             memory: vec![0; size],
             registers: [0; REGISTER_COUNT],
             pc: 0,
+            code: 0..0,
         }
     }
 
@@ -246,6 +247,9 @@ impl Cpu {
     /// holds for the programs this emulator is meant to run but not in general:
     /// a segment at `p_offset != p_vaddr` ends up somewhere else, and so do
     /// anything but the file's own bytes, which are not in memory at all.
+    ///
+    /// The segment holding the entry point is remembered as the program's code,
+    /// which is what [`Cpu::disassembly`] lists.
     ///
     /// # Errors
     ///
@@ -268,18 +272,56 @@ impl Cpu {
         // The entry point is a virtual address while the program counter reads
         // memory, so it has to be translated through the segment holding it.
         let entry = elf.entry_point();
-        let offset = elf
+        let segment = elf
             .program_header_iter()
-            .find_map(|phdr| {
-                (phdr.vaddr() <= entry && entry < phdr.vaddr() + phdr.memsz())
-                    .then(|| entry - phdr.vaddr() + phdr.offset())
-            })
+            .find(|phdr| phdr.vaddr() <= entry && entry < phdr.vaddr() + phdr.memsz())
             .ok_or(LoadError::EntryPointNotLoadable)?;
-        let pc = u32::try_from(offset).map_err(|_| LoadError::EntryPointNotLoadable)?;
+        let pc = u32::try_from(entry - segment.vaddr() + segment.offset())
+            .map_err(|_| LoadError::EntryPointNotLoadable)?;
+
+        // The code is the part of that segment which is in the file. The rest of
+        // it is memory a loader would zero fill, which is not instructions, and
+        // a segment claiming more bytes than the file holds is malformed and has
+        // nothing behind it to read.
+        let start = u32::try_from(segment.offset()).unwrap_or(0);
+        let end = u32::try_from(segment.offset() + segment.filesz()).unwrap_or(u32::MAX);
+        let image_end = u32::try_from(image.len()).unwrap_or(u32::MAX);
+        self.code = start..end.min(image_end);
 
         self.memory[..image.len()].copy_from_slice(&image);
         self.pc = pc;
         Ok(())
+    }
+
+    /// The program's code as a disassembly: one line per instruction, from the
+    /// first to the last word of the segment the entry point is in.
+    ///
+    /// Each line is the one `--debug` prints for that instruction while a run is
+    /// executing it, so a listing and a trace of the same program can be read
+    /// against each other. Nothing is executed here, which is the point: a
+    /// listing covers the code a run never reaches, such as the setup the entry
+    /// point jumps over, and the words a run would stop on are named as they
+    /// are passed over.
+    ///
+    /// The addresses are the ones the emulator itself uses, which for an image
+    /// loaded the way [`Cpu::load`] loads it are its file offsets rather than the
+    /// virtual addresses the ELF calls them.
+    pub fn disassembly(&self) -> impl Iterator<Item = String> + '_ {
+        let cpu = self;
+        self.code
+            .clone()
+            .step_by(INSTRUCTION_SIZE as usize)
+            .map(move |pc| {
+                let word = cpu.load_bytes::<4>(pc);
+                let mut line = String::new();
+                trace_line(
+                    &mut line,
+                    pc,
+                    word,
+                    &Disassembly::new(pc, &Instruction::decode(word)),
+                );
+                line
+            })
     }
 
     /// Prints the program counter and every register, four to a line.
@@ -331,10 +373,20 @@ impl Cpu {
 
     /// Executes `inst`, updating the registers and the program counter.
     ///
-    /// The disassembly that `--debug` prints is written to `trace`.
+    /// The disassembly that `--debug` prints is written to `trace`. It is
+    /// produced here, from the instruction alone, rather than being spelled out
+    /// again in each arm: what an instruction is called is the disassembler's
+    /// business, and a mnemonic that this function and the disassembler each
+    /// worked out for themselves is a mnemonic that can disagree with the
+    /// instruction it names.
     #[allow(clippy::too_many_lines)]
     fn execute(&mut self, inst: &Instruction, trace: &mut Trace<'_>) -> Step {
         trace.clear();
+        // Before the arms below, because they move the program counter and the
+        // offsets of a branch and a jump are counted from the instruction
+        // itself.
+        let disassembly = Disassembly::new(self.pc, inst);
+        trace.write(format_args!("{disassembly}"));
 
         // The arms below only have to deal with instructions that redirect
         // control flow; the shared epilogue advances the program counter and
@@ -348,30 +400,29 @@ impl Cpu {
                 funct7,
             } => {
                 let (a, b) = (self.registers[rs1], self.registers[rs2]);
-                let (mnemonic, value) = match funct3 {
+                let value = match funct3 {
                     // `add` and `sub` share funct3 and are told apart by funct7.
                     0b000 => match funct7 {
-                        0b000_0000 => ("add", a.wrapping_add(b)),
-                        0b010_0000 => ("sub", a.wrapping_sub(b)),
+                        0b000_0000 => a.wrapping_add(b),
+                        0b010_0000 => a.wrapping_sub(b),
                         other => panic!("unknown R funct7: {other:#09b}"),
                     },
-                    0b001 => ("sll", a << (b & SHIFT_AMOUNT_MASK)),
-                    0b010 => ("slt", u32::from((a as i32) < (b as i32))),
-                    0b011 => ("sltu", u32::from(a < b)),
-                    0b100 => ("xor", a ^ b),
+                    0b001 => a << (b & SHIFT_AMOUNT_MASK),
+                    0b010 => u32::from((a as i32) < (b as i32)),
+                    0b011 => u32::from(a < b),
+                    0b100 => a ^ b,
                     // `srl` and `sra`, like `add` and `sub`, share funct3.
                     0b101 => match funct7 {
-                        0b000_0000 => ("srl", a >> (b & SHIFT_AMOUNT_MASK)),
-                        0b010_0000 => ("sra", ((a as i32) >> (b & SHIFT_AMOUNT_MASK)) as u32),
+                        0b000_0000 => a >> (b & SHIFT_AMOUNT_MASK),
+                        0b010_0000 => ((a as i32) >> (b & SHIFT_AMOUNT_MASK)) as u32,
                         other => panic!("unknown R funct7: {other:#09b}"),
                     },
-                    0b110 => ("or", a | b),
-                    0b111 => ("and", a & b),
+                    0b110 => a | b,
+                    0b111 => a & b,
                     other => {
                         panic!("execute: unimplemented R funct3: {other:#05b}")
                     }
                 };
-                trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},x{rs2}"));
                 self.registers[rd] = value;
                 Step::Next
             }
@@ -383,54 +434,36 @@ impl Cpu {
             } => {
                 let a = self.registers[rs1];
                 match funct3 {
-                    // The shifts are the only OP-IMM instructions that print
-                    // their operand in hex, and the only ones that have to
-                    // check the funct7 half of the immediate.
+                    // The shifts are the only OP-IMM instructions that check the
+                    // funct7 half of their immediate.
                     0b001 | 0b101 => {
                         let shamt = imm & SHIFT_AMOUNT_MASK;
-                        let (mnemonic, value) = if funct3 == 0b001 {
-                            ("slli", a << shamt)
+                        let value = if funct3 == 0b001 {
+                            a << shamt
                         } else {
                             match imm >> 5 & 0b111_1111 {
-                                0b000_0000 => ("srli", a >> shamt),
+                                0b000_0000 => a >> shamt,
                                 0b010_0000 => {
                                     // Shifting right and then refilling the
                                     // vacated high bits with copies of the
                                     // sign bit is an arithmetic shift.
-                                    ("srai", sign_extend(a >> shamt, 32 - shamt))
+                                    sign_extend(a >> shamt, 32 - shamt)
                                 }
                                 other => panic!("unknown shift funct7: {other:#09b}"),
                             }
                         };
-                        trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},{shamt:#x}"));
                         self.registers[rd] = value;
                     }
                     _ => {
-                        let (mnemonic, value) = match funct3 {
-                            0b000 => ("addi", a.wrapping_add(imm)),
-                            0b010 => ("slti", u32::from((a as i32) < imm as i32)),
-                            0b011 => ("sltiu", u32::from(a < imm)),
-                            0b100 => ("xori", a ^ imm),
-                            0b110 => ("ori", a | imm),
-                            0b111 => ("andi", a & imm),
+                        let value = match funct3 {
+                            0b000 => a.wrapping_add(imm),
+                            0b010 => u32::from((a as i32) < imm as i32),
+                            0b011 => u32::from(a < imm),
+                            0b100 => a ^ imm,
+                            0b110 => a | imm,
+                            0b111 => a & imm,
                             other => panic!("unknown I funct3: {other:#05b}"),
                         };
-                        // `sltiu` compares its register against the
-                        // sign-extended immediate read as an unsigned value,
-                        // and is displayed that way; the other OP-IMM forms
-                        // display a signed immediate.
-                        // `addi x0, x0, 0` is the canonical encoding of a nop.
-                        if rd == 0 && rs1 == 0 && imm == 0 {
-                            trace.write_str("nop");
-                        } else if funct3 == 0b011 {
-                            // `sltiu` compares its register against the
-                            // sign-extended immediate read as an unsigned
-                            // value, and is displayed that way; the other
-                            // OP-IMM forms display a signed immediate.
-                            trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},{imm}"));
-                        } else {
-                            trace.write(format_args!("{mnemonic:<8}x{rd},x{rs1},{}", imm as i32));
-                        }
                         self.registers[rd] = value;
                     }
                 }
@@ -443,29 +476,15 @@ impl Cpu {
                 imm,
             } => {
                 let address = self.registers[rs1].wrapping_add(imm);
-                match funct3 {
-                    0b000 => {
-                        trace.write(format_args!("lb      x{rd},{}(x{rs1})", imm as i32));
-                        self.registers[rd] = sign_extend(self.load_bytes::<1>(address), 8);
-                    }
-                    0b001 => {
-                        trace.write(format_args!("lh      x{rd},{}(x{rs1})", imm as i32));
-                        self.registers[rd] = sign_extend(self.load_bytes::<2>(address), 16);
-                    }
-                    0b010 => {
-                        trace.write(format_args!("lw      x{rd},{}(x{rs1})", imm as i32));
-                        self.registers[rd] = self.load_bytes::<4>(address);
-                    }
-                    0b100 => {
-                        trace.write(format_args!("lbu     x{rd},{imm}(x{rs1})"));
-                        self.registers[rd] = self.load_bytes::<1>(address);
-                    }
-                    0b101 => {
-                        trace.write(format_args!("lhu     x{rd},{imm}(x{rs1})"));
-                        self.registers[rd] = self.load_bytes::<2>(address);
-                    }
+                let value = match funct3 {
+                    0b000 => sign_extend(self.load_bytes::<1>(address), 8),
+                    0b001 => sign_extend(self.load_bytes::<2>(address), 16),
+                    0b010 => self.load_bytes::<4>(address),
+                    0b100 => self.load_bytes::<1>(address),
+                    0b101 => self.load_bytes::<2>(address),
                     other => panic!("unknown I funct3: {other:#05b}"),
-                }
+                };
+                self.registers[rd] = value;
                 Step::Next
             }
             Instruction::Store {
@@ -476,22 +495,12 @@ impl Cpu {
             } => {
                 let address = self.registers[rs1].wrapping_add(imm);
                 let value = self.registers[rs2];
-                let mnemonic = match funct3 {
-                    0b000 => {
-                        self.store_bytes::<1>(address, value);
-                        "sb"
-                    }
-                    0b001 => {
-                        self.store_bytes::<2>(address, value);
-                        "sh"
-                    }
-                    0b010 => {
-                        self.store_bytes::<4>(address, value);
-                        "sw"
-                    }
+                match funct3 {
+                    0b000 => self.store_bytes::<1>(address, value),
+                    0b001 => self.store_bytes::<2>(address, value),
+                    0b010 => self.store_bytes::<4>(address, value),
                     other => panic!("unknown S funct3: {other:#05b}"),
-                };
-                trace.write(format_args!("{mnemonic:<8}x{rs2},{}(x{rs1})", imm as i32));
+                }
                 Step::Next
             }
             Instruction::Branch {
@@ -502,18 +511,17 @@ impl Cpu {
             } => {
                 let target = (self.pc as i32).wrapping_add(imm as i32);
                 let (a, b) = (self.registers[rs1], self.registers[rs2]);
-                let (mnemonic, taken) = match funct3 {
-                    0b000 => ("beq", a == b),
-                    0b001 => ("bne", a != b),
-                    0b100 => ("blt", (a as i32) < (b as i32)),
-                    0b101 => ("bge", (a as i32) >= (b as i32)),
-                    0b110 => ("bltu", a < b),
-                    0b111 => ("bgeu", a >= b),
+                let taken = match funct3 {
+                    0b000 => a == b,
+                    0b001 => a != b,
+                    0b100 => (a as i32) < (b as i32),
+                    0b101 => (a as i32) >= (b as i32),
+                    0b110 => a < b,
+                    0b111 => a >= b,
                     other => {
                         panic!("execute: unimplemented B funct3: {other:#05b}")
                     }
                 };
-                trace.write(format_args!("{mnemonic:<8}x{rs1},x{rs2},{target:08x}"));
                 if taken {
                     self.pc = target as u32;
                     Step::Jump
@@ -522,13 +530,11 @@ impl Cpu {
                 }
             }
             Instruction::Jump { rd, imm } => {
-                trace.write(format_args!("jal     x{rd},{imm:08x}"));
                 self.registers[rd] = self.pc.wrapping_add(4);
                 self.pc = self.pc.wrapping_add(imm);
                 Step::Jump
             }
             Instruction::JumpRegister { rd, rs1, imm } => {
-                trace.write(format_args!("jalr    x{rd},x{rs1},{imm:#x}"));
                 // Read the base before writing rd: `jalr x1, x1, 0` is legal.
                 // The spec requires the low bit of the target to be zero.
                 let target = self.registers[rs1].wrapping_add(imm) & !1;
@@ -537,45 +543,29 @@ impl Cpu {
                 Step::Jump
             }
             Instruction::Lui { rd, imm } => {
-                trace.write(format_args!("lui     x{rd},{imm:#x}"));
                 self.registers[rd] = imm << 12;
                 Step::Next
             }
             Instruction::Auipc { rd, imm } => {
-                trace.write(format_args!("auipc   x{rd},{imm:#x}"));
                 self.registers[rd] = self.pc.wrapping_add(imm << 12);
                 Step::Next
             }
-            Instruction::System {
-                rd,
-                rs1,
-                imm,
-                funct3,
-            } => match funct3 {
+            Instruction::System { imm, funct3, .. } => match funct3 {
                 // `ecall`, `ebreak` and `mret` share funct3 and are told apart
                 // by the immediate, which for them is a plain 12-bit field
                 // rather than a sign extended one.
                 0b000 => match imm {
-                    0x000 => {
-                        trace.write_str("ecall");
-                        Step::Ecall
-                    }
+                    0x000 => Step::Ecall,
                     // Both ECALL and EBREAK "cause a precise requested trap to
-                    // the supporting execution environment" (RV32I 1.9), and
-                    // this emulator has no traps, so it reports the breakpoint
-                    // and stops.
-                    0x001 => {
-                        trace.write_str("ebreak");
-                        Step::Breakpoint
-                    }
+                    // the supporting execution environment" (RV32I 1.9), and this
+                    // emulator has no traps, so it reports the breakpoint and
+                    // stops.
+                    0x001 => Step::Breakpoint,
                     // MRET belongs to the privileged architecture, which this
                     // emulator does not implement. It is left as a no-op because
                     // the riscv-tests programs use it in their machine-mode setup
                     // and would never reach the instruction they are testing.
-                    0b0011_0000_0010 => {
-                        trace.write_str("mret");
-                        Step::Next
-                    }
+                    0b0011_0000_0010 => Step::Next,
                     other => panic!("unknown I imm: {other:#014b}"),
                 },
                 // This emulator implements no CSR file, and the same is true of
@@ -584,40 +574,11 @@ impl Cpu {
                 // every access is what lets them run to completion, so a
                 // program that relies on a CSR value reading one back gets
                 // zero instead.
-                0b001 => {
-                    trace.write(format_args!("csrrw   x{rd},{imm:#x},x{rs1}"));
-                    Step::Next
-                }
-                0b010 => {
-                    trace.write(format_args!("csrrs   x{rd},{imm:#x},x{rs1}"));
-                    Step::Next
-                }
-                0b011 => {
-                    trace.write(format_args!("csrrc   x{rd},{imm:#x},x{rs1}"));
-                    Step::Next
-                }
-                0b101 => {
-                    trace.write(format_args!("csrrwi  x{rd},{imm:#x},{rs1}"));
-                    Step::Next
-                }
-                0b110 => {
-                    trace.write(format_args!("csrrsi  x{rd},{imm:#x},{rs1}"));
-                    Step::Next
-                }
-                0b111 => {
-                    trace.write(format_args!("csrrci  x{rd},{imm:#x},{rs1}"));
-                    Step::Next
-                }
+                0b001 | 0b010 | 0b011 | 0b101 | 0b110 | 0b111 => Step::Next,
                 other => panic!("unknown I funct3: {other:#05b}"),
             },
-            Instruction::Fence => {
-                trace.write_str("fence");
-                Step::Next
-            }
-            Instruction::Unsupported => {
-                trace.write_str("unimp");
-                Step::Unsupported
-            }
+            Instruction::Fence { .. } => Step::Next,
+            Instruction::Unsupported => Step::Unsupported,
         };
 
         self.registers[0] = 0;
@@ -738,10 +699,12 @@ impl Cpu {
                 .expect("memory is larger than the address space");
         }
 
-        // Both are reused for the life of the run, so that neither the prompt
-        // nor the disassembly allocates per instruction.
+        // All three are reused for the life of the run, so that neither the
+        // prompt, nor the disassembly, nor the line they are printed on
+        // allocates per instruction.
         let mut line = String::new();
         let mut disasm = String::new();
+        let mut traced = String::new();
         // Tracing is the point of stepping by hand, so interactive mode traces
         // whether or not `--debug` was asked for.
         let tracing = config.debug || config.interactive;
@@ -784,7 +747,8 @@ impl Cpu {
                     self.print_registers(config.aliases);
                 }
                 if tracing {
-                    print_trace(pc, word, &disasm);
+                    trace_line(&mut traced, pc, word, &disasm);
+                    println!("{traced}");
                 }
             }
 
@@ -1116,6 +1080,38 @@ mod tests {
     }
 
     #[test]
+    fn the_trace_and_the_listing_print_the_same_disassembly() {
+        // The reason the disassembly lives in one place rather than in each arm
+        // of `execute`: a line of a trace is a line of a listing, so neither can
+        // end up naming an instruction differently from the other. The harness
+        // executes each word at address zero, which is where the listing would
+        // print it, and the base register points into memory so that the load
+        // and the store have somewhere to go.
+        let mut h = Harness::new();
+        h.set(2, 0x10);
+        for word in [
+            enc::r(0b010_0000, 3, 2, 0b000, 1),
+            enc::op_imm(1, 0b000, 2, -4),
+            enc::op_imm(0, 0b000, 0, 0),
+            enc::load(1, 0b100, 2, -1),
+            enc::store(0b010, 2, 3, -4),
+            enc::branch(0b000, 2, 3, -8),
+            enc::jal(1, 0x1000),
+            enc::jalr(1, 2, -4),
+            enc::lui(1, 0xabcde),
+            enc::auipc(1, 0xabcde),
+            enc::system(1, 0b001, 2, 0x300),
+            enc::system(0, 0b000, 0, 0x000),
+            enc::fence(0b001),
+            0,
+        ] {
+            h.step(word);
+            let listed = Disassembly::new(0, &Instruction::decode(word)).to_string();
+            assert_eq!(h.disasm(), listed, "{word:#010x}");
+        }
+    }
+
+    #[test]
     fn commands_report_the_machine_state() {
         let mut h = Harness::new();
         h.set(2, 0x1234_5678).poke(0x14c, &[0x13, 0x01, 0x00, 0x00]);
@@ -1187,6 +1183,34 @@ mod tests {
         cpu.load(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/add"))
             .unwrap();
         assert_eq!(cpu.pc, 0x1000);
+    }
+
+    #[test]
+    fn a_listing_covers_the_whole_of_the_code_segment() {
+        // The segment holding the entry point of tests/add: 0x6bc bytes of code
+        // at file offset 0x1000, which is 431 instructions.
+        let mut cpu = Cpu::new(16);
+        cpu.load(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/add"))
+            .unwrap();
+        let listing: Vec<String> = cpu.disassembly().collect();
+        assert_eq!(listing.len(), 0x6bc / 4);
+        // The first line is the entry point, which jumps over the machine-mode
+        // setup that a trace of a run never shows.
+        assert_eq!(
+            listing[0],
+            "00001000:   0480006f          \tjal     x0,00001048",
+        );
+    }
+
+    #[test]
+    fn a_cpu_with_no_image_has_nothing_to_list() {
+        let mut cpu = Cpu::new(16);
+        assert_eq!(cpu.disassembly().count(), 0);
+        // The listing is empty until an image says where the code is, and loading
+        // one is what fills it in.
+        cpu.load(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple"))
+            .unwrap();
+        assert!(cpu.disassembly().next().is_some());
     }
 
     #[test]

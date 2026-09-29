@@ -8,18 +8,19 @@ The pre-compiled test binaries are included in this repo. The tests are built fr
 ```
 $ cargo test
 
-running 32 tests
-test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+running 47 tests
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 running 2 tests
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-running 1 test
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 ```
 
-The 32 unit tests cover instruction decoding and execution, the 2 integration
-tests run every program in `tests/`, and the last one is this file's example.
+The 47 unit tests cover instruction decoding, execution and disassembly, the 3
+integration tests run and list every program in `tests/`, and the two doc tests
+are the examples in this file and in the source.
 
 ## Build & Run
 You need `rust` and `cargo` installed in order to build the emulator.
@@ -41,6 +42,7 @@ Arguments:
 
 Options:
   -d, --debug         Print instructions as they are executed
+  -D, --disassemble   Disassemble the program instead of running it
   -r, --registers     Show register values after each instruction
   -a, --aliases       Show register ABI names or numeric values (x0-x31) Use with the `--registers` option
   -i, --interactive   Interactive mode. Use with either `--registers` and/or `--debug`
@@ -62,6 +64,52 @@ stops with a message naming its address. Note that the programs in `tests/` use
 neither privilege modes nor a CSR file, so it lets `mret` retire and discards
 every CSR access. That is what lets them run at all; it also means those programs
 only exercise the arithmetic and memory instructions, not traps.
+
+## Disassembly
+Pass the `-D` or `--disassemble` option to list a program's code instead of
+running it. Every four-byte word of the segment holding the entry point gets a
+line: the address it is at, the word it encoded as, and what it means.
+
+```
+$ cargo run -q -- -D tests/simple
+00001000:   0480006f          	jal     x0,00001048
+00001004:   34202f73          	csrrs   x30,0x342,x0
+00001008:   00800f93          	addi    x31,x0,8
+0000100c:   03ff0863          	beq     x30,x31,0000103c
+00001010:   00900f93          	addi    x31,x0,9
+00001014:   03ff0463          	beq     x30,x31,0000103c
+00001018:   00b00f93          	addi    x31,x0,11
+0000101c:   03ff0063          	beq     x30,x31,0000103c
+00001020:   00000f13          	addi    x30,x0,0
+00001024:   000f0463          	beq     x30,x0,0000102c
+00001028:   000f0067          	jalr    x0,x30,0
+```
+
+A line is the address, the word, a tab, and the instruction. The three parts come
+apart the way the manual describes them. In `0x0480006f` the last seven bits are
+`1101111`, the `JAL` opcode, and bits 30:21 hold `0x24`, which is the offset
+`0x48` moved down by a bit because the J format has no `imm[0]`. At `0x1000` that
+offset means `0x1048`, which is the target the listing prints.
+
+A branch is printed as the address it goes to rather than as the offset it
+encodes, so that the targets can be read off the listing itself. `jalr` is the
+exception, because its target depends on a register and is not known until it
+runs.
+
+Nothing is executed, so a listing covers the code a run never reaches: the
+riscv-tests programs in `tests/` all start with a `jal` over their machine-mode
+setup, which a `--debug` trace skips and a listing shows. The listing also names
+the words a run would stop on, as `unimp`, which in a compiled program are the
+zero words a linker pads the end of a segment with and the `wfi` the
+riscv-tests trampoline spins on after the program has exited.
+
+A listing and a trace are printed by the same code, so a line of one is a line of
+the other.
+
+The addresses in a listing are the ones the emulator itself uses, which for an
+image loaded the way [below](#loading) it loads it are its file offsets rather
+than the virtual addresses the ELF calls them. `0x1000` above is file offset
+`0x1000`, which the ELF calls `0x80001000`.
 
 ## Interactive mode
 To launch the emulator in interactive mode, pass the `-i` or `--interactive` option.
@@ -90,7 +138,7 @@ zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000
   s8: 0x00000000    s9: 0x00000000   s10: 0x00000000   s11: 0x00000000  
   t3: 0x00000000    t4: 0x00000000    t5: 0x00000000    t6: 0x00000000  
 
-00001000:   0480006f           	jal     x0,00000048
+00001000:   0480006f          	jal     x0,00001048
 > 
   pc: 0x0000104c
 zero: 0x00000000    ra: 0x00000000    sp: 0x00000000    gp: 0x00000000  

@@ -76,8 +76,9 @@ pub enum Instruction {
         imm: u32,
     },
     /// `MISC-MEM` (`0b000_1111`): `fence` and `fence.i`. Both are no-ops on a
-    /// single hart with no devices to order against.
-    Fence,
+    /// single hart with no devices to order against. The funct3 is the only
+    /// thing that tells them apart, so it is kept.
+    Fence { funct3: u32 },
     /// Not a valid RV32I encoding, or one this emulator refuses to run.
     /// The emulator stops when it reaches one of these.
     Unsupported,
@@ -111,6 +112,12 @@ mod opcode {
 /// Nothing in this emulator can ever wake the hart up, so the instruction is
 /// reported as unsupported instead of spinning forever.
 const WFI: u32 = 0xc00_1073;
+
+/// The low five bits of a shift amount, which is where a shift amount lives
+/// whether it came from a register (`sll`) or from an immediate (`slli`). The
+/// spec defines it that way, so `sll` by 32 and `sll` by 63 are both shifts by
+/// a whole word.
+pub const SHIFT_AMOUNT_MASK: u32 = 0b1_1111;
 
 impl Instruction {
     /// Decodes a raw 32-bit instruction word.
@@ -201,7 +208,9 @@ impl Instruction {
                 rd: rd(inst),
                 imm: field(inst, 12, 20),
             },
-            opcode::MISC_MEM => Instruction::Fence,
+            opcode::MISC_MEM => Instruction::Fence {
+                funct3: funct3(inst),
+            },
             _ => Instruction::Unsupported,
         }
     }
@@ -524,8 +533,15 @@ mod tests {
 
     #[test]
     fn misc_mem_and_unsupported() {
-        assert_eq!(Instruction::decode(enc::fence(0b000)), Instruction::Fence);
-        assert_eq!(Instruction::decode(enc::fence(0b001)), Instruction::Fence);
+        // The funct3 is what tells `fence` from `fence.i`.
+        assert_eq!(
+            Instruction::decode(enc::fence(0b000)),
+            Instruction::Fence { funct3: 0 }
+        );
+        assert_eq!(
+            Instruction::decode(enc::fence(0b001)),
+            Instruction::Fence { funct3: 1 }
+        );
         // A zero word is not a valid instruction.
         assert_eq!(Instruction::decode(0x0000_0000), Instruction::Unsupported);
         // Neither is wfi, which would never return.

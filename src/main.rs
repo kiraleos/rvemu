@@ -18,6 +18,10 @@ struct Args {
     #[arg(short, long)]
     debug: bool,
 
+    /// Disassemble the program instead of running it
+    #[arg(short = 'D', long)]
+    disassemble: bool,
+
     /// Show register values after each instruction
     #[arg(short, long)]
     registers: bool,
@@ -57,6 +61,15 @@ fn main() -> ExitCode {
     if let Err(err) = cpu.load(&args.file) {
         eprintln!("{}: {err}", args.file.display());
         return ExitCode::FAILURE;
+    }
+
+    // Nothing is executed, so there is no exit status to report and none of the
+    // options about running a program apply.
+    if args.disassemble {
+        for line in cpu.disassembly() {
+            println!("{line}");
+        }
+        return ExitCode::SUCCESS;
     }
 
     let config = RunConfig {
