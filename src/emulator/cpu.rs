@@ -24,6 +24,10 @@ const A7: usize = 17;
 /// Every RV32I instruction is four bytes wide.
 const INSTRUCTION_SIZE: usize = 4;
 
+/// The spec defines a shift amount as the low five bits of its operand, whether
+/// that comes from a register (`sll`) or from an immediate (`slli`).
+const SHIFT_AMOUNT_MASK: u32 = 0b1_1111;
+
 /// A RISC-V RV32I CPU, as described by the unprivileged base integer spec.
 pub struct Cpu {
     memory: Vec<u8>,
@@ -158,14 +162,14 @@ impl Cpu {
                         0b010_0000 => ("sub", a.wrapping_sub(b)),
                         other => panic!("unknown R funct7: {other:#09b}"),
                     },
-                    0b001 => ("sll", a << b),
+                    0b001 => ("sll", a << (b & SHIFT_AMOUNT_MASK)),
                     0b010 => ("slt", ((a as i32) < (b as i32)) as u32),
                     0b011 => ("sltu", (a < b) as u32),
                     0b100 => ("xor", a ^ b),
                     // `srl` and `sra`, like `add` and `sub`, share funct3.
                     0b101 => match funct7 {
-                        0b000_0000 => ("srl", a >> b),
-                        0b010_0000 => ("sra", ((a as i32) >> b) as u32),
+                        0b000_0000 => ("srl", a >> (b & SHIFT_AMOUNT_MASK)),
+                        0b010_0000 => ("sra", ((a as i32) >> (b & SHIFT_AMOUNT_MASK)) as u32),
                         other => panic!("unknown R funct7: {other:#09b}"),
                     },
                     0b110 => ("or", a | b),
@@ -190,7 +194,7 @@ impl Cpu {
                     // their operand in hex, and the only ones that have to
                     // check the funct7 half of the immediate.
                     0b001 | 0b101 => {
-                        let shamt = imm & 0b1_1111;
+                        let shamt = imm & SHIFT_AMOUNT_MASK;
                         let (mnemonic, value) = if funct3 == 0b001 {
                             ("slli", a << shamt)
                         } else {
@@ -685,6 +689,29 @@ mod tests {
             h.step(enc::r(0, 3, 2, funct3, 1));
             assert_eq!(h.reg(1), expected, "funct3 {funct3:#05b}");
         }
+    }
+
+    #[test]
+    fn register_shifts_use_only_the_low_five_bits_of_the_amount() {
+        // The spec defines the amount as rs2[4:0], so 33 has to behave as one
+        // and 32 as zero.
+        let mut h = Harness::new();
+        h.set(2, 0x8000_0000);
+        for (amount, sra, srl) in [
+            (1u32, 0xc000_0000, 0x4000_0000),
+            (32, 0x8000_0000, 0x8000_0000),
+            (33, 0xc000_0000, 0x4000_0000),
+            (63, 0xffff_ffff, 0x0000_0001),
+        ] {
+            h.set(3, amount);
+            h.step(enc::r(0b010_0000, 3, 2, 0b101, 1));
+            assert_eq!(h.reg(1), sra, "sra by {amount}");
+            h.step(enc::r(0, 3, 2, 0b101, 1));
+            assert_eq!(h.reg(1), srl, "srl by {amount}");
+        }
+        h.set(2, 1).set(3, 33);
+        h.step(enc::r(0, 3, 2, 0b001, 1));
+        assert_eq!(h.reg(1), 1 << 1, "sll by 33 shifts by one");
     }
 
     #[test]
