@@ -1,5 +1,4 @@
 use super::instruction::{sign_extend, Instruction};
-use crate::Args;
 use elf_rs::{Elf, ElfFile};
 use std::fmt::Write as _;
 use std::io::{Read, Write};
@@ -27,6 +26,41 @@ const INSTRUCTION_SIZE: usize = 4;
 /// The spec defines a shift amount as the low five bits of its operand, whether
 /// that comes from a register (`sll`) or from an immediate (`slli`).
 const SHIFT_AMOUNT_MASK: u32 = 0b1_1111;
+
+/// How a program should be run.
+///
+/// This is deliberately separate from the command line: the CPU has no business
+/// knowing about flags, and in particular about the path of the file it was
+/// loaded from.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RunConfig {
+    /// Print every instruction as it is executed.
+    pub debug: bool,
+    /// Print the register file alongside each instruction.
+    pub registers: bool,
+    /// Name registers `sp` and `a0` rather than `x2` and `x10`.
+    pub aliases: bool,
+    /// Run one instruction per line of input instead of running freely.
+    pub interactive: bool,
+    /// Start here rather than at the ELF entry point.
+    pub pc: Option<u32>,
+    /// Point the stack pointer at the top of memory before starting.
+    pub stack: bool,
+}
+
+/// Why the emulator stopped running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The program called `exit` with this status.
+    Exited(i32),
+    /// The program counter ran past the end of memory.
+    PcOverflow,
+    /// The program made a system call the emulator does not implement. The
+    /// payload is the system call number, which lives in `a7`.
+    UnsupportedSyscall(u32),
+    /// The program reached an instruction the emulator does not implement.
+    UnsupportedInstruction,
+}
 
 /// A RISC-V RV32I CPU, as described by the unprivileged base integer spec.
 pub struct Cpu {
@@ -420,6 +454,25 @@ impl Cpu {
         step
     }
 
+    /// Prints one line of the `--debug` trace.
+    fn print_trace(&self, pc: u32, word: u32, disasm: &str) {
+        println!("{pc:<08x}:   {word:08x}          \t{disasm}");
+    }
+
+    /// Interprets the `ecall` the CPU just retired, if the run loop should stop.
+    fn handle_ecall(&self, debug: bool) -> Option<Outcome> {
+        // 93 is the only system call this emulator implements: `exit`.
+        if self.registers[A7] == 93 {
+            let code = self.registers[A0] as i32;
+            println!("Program exited with exit code: {code}");
+            return Some(Outcome::Exited(code));
+        }
+        if debug {
+            println!("Unimplemented ECALL: {}", self.registers[A7]);
+        }
+        Some(Outcome::UnsupportedSyscall(self.registers[A7]))
+    }
+
     fn command_handler(&mut self, com: &str) {
         if com.is_empty() {
             return;
@@ -459,11 +512,10 @@ impl Cpu {
         }
     }
 
-    fn run_interactive(&mut self, args: Args) -> i32 {
-        let ret: i32;
-        let pc = args.pc;
-        if let Some(pc) = pc {
-            self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
+    /// Steps the program under the control of whoever is typing at it.
+    fn run_interactive(&mut self, args: &RunConfig) -> Outcome {
+        if let Some(pc) = args.pc {
+            self.pc = pc;
         }
         if args.stack {
             self.registers[SP] = (self.memory.len() - 1) as u32;
@@ -482,61 +534,43 @@ impl Cpu {
             let inst = Instruction::decode(raw_inst);
             let pc_copy = self.pc;
 
-            // An empty line steps the program; anything else was a command
-            // that has already been handled.
+            // An empty line steps the program; anything else was a command that
+            // has already been handled.
             let mut step = None;
             if buf.is_empty() {
                 step = Some(self.execute(&inst, &mut disasm));
                 if args.registers {
                     self.print_registers(args.aliases);
                 }
-                println!("{:<08x}:   {:08x}          	{}", pc_copy, raw_inst, disasm);
+                self.print_trace(pc_copy, raw_inst, &disasm);
             }
 
             if (self.pc as usize) >= self.memory.len() {
                 if args.debug {
                     println!("PC overflow.");
                 }
-                ret = -1;
-                break;
+                return Outcome::PcOverflow;
             }
             match step {
-                Some(Step::Ecall) => match self.registers[A7] {
-                    // `exit` syscall
-                    93 => {
-                        ret = self.registers[A0] as i32;
-                        println!("Program exited with exit code: {}", ret);
-                        break;
-                    }
-                    _ => {
-                        if args.debug {
-                            println!("Unimplemented ECALL: {}", self.registers[A7],);
-                        }
-                        ret = -2;
-                        break;
-                    }
-                },
+                Some(Step::Ecall) => return self.handle_ecall(args.debug).unwrap(),
                 Some(Step::Unsupported) => {
                     if args.debug {
                         println!("Reached an unimp instruction.");
                     }
-                    ret = -3;
-                    break;
+                    return Outcome::UnsupportedInstruction;
                 }
                 _ => {}
             }
         }
-        ret
     }
 
-    pub fn run(&mut self, args: Args) -> i32 {
+    /// Runs the program from its entry point until it cannot go any further.
+    pub fn run(&mut self, args: &RunConfig) -> Outcome {
         if args.interactive {
             return self.run_interactive(args);
         }
-        let ret: i32;
-        let pc = args.pc;
-        if let Some(pc) = pc {
-            self.pc = u32::from_str_radix(&pc, 16).unwrap_or(self.pc);
+        if let Some(pc) = args.pc {
+            self.pc = pc;
         }
         if args.stack {
             self.registers[SP] = (self.memory.len() - 1) as u32;
@@ -551,46 +585,28 @@ impl Cpu {
             let pc_copy = self.pc;
             let step = self.execute(&inst, &mut disasm);
             if args.debug {
-                println!("{:<08x}:   {:08x}          	{}", pc_copy, raw_inst, disasm);
+                self.print_trace(pc_copy, raw_inst, &disasm);
             }
 
             if (self.pc as usize) >= self.memory.len() {
                 if args.debug {
                     println!("PC overflow.");
                 }
-                ret = -1;
-                break;
+                return Outcome::PcOverflow;
             }
             match step {
-                Step::Ecall => match self.registers[A7] {
-                    // `exit` syscall
-                    93 => {
-                        ret = self.registers[A0] as i32;
-                        println!("Program exited with exit code: {}", ret);
-                        break;
-                    }
-                    _ => {
-                        if args.debug {
-                            println!("Unimplemented ECALL: {}", self.registers[A7],);
-                        }
-                        ret = -2;
-                        break;
-                    }
-                },
+                Step::Ecall => return self.handle_ecall(args.debug).unwrap(),
                 Step::Unsupported => {
                     if args.debug {
                         println!("Reached an unimp instruction.");
                     }
-                    ret = -3;
-                    break;
+                    return Outcome::UnsupportedInstruction;
                 }
                 _ => {}
             }
         }
-        ret
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

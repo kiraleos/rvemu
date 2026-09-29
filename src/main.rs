@@ -1,7 +1,12 @@
 mod emulator;
+
+#[cfg(test)]
 mod tests;
+
 use clap::Parser;
-use emulator::cpu::Cpu;
+use emulator::cpu::{Cpu, Outcome, RunConfig};
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 ///  A RISC-V emulator, specifically the RV32I base integer instruction set.
 #[derive(Parser, Clone)]
@@ -9,7 +14,7 @@ use emulator::cpu::Cpu;
 pub struct Args {
     /// The path of the file to be executed
     #[clap(parse(from_os_str), value_name = "FILE")]
-    file: std::path::PathBuf,
+    file: PathBuf,
 
     /// Print instructions as they are executed
     #[clap(short, long)]
@@ -41,14 +46,19 @@ pub struct Args {
     #[clap(long, value_name = "size")]
     pub mem: Option<String>,
 }
-fn main() {
+
+/// The default size of emulated memory, in kibibytes.
+const DEFAULT_MEMORY_KIB: usize = 16;
+
+fn main() -> ExitCode {
     let args = Args::parse();
 
-    let mem = args.mem.clone();
-    let mut cpu = match mem {
-        Some(mem) => Cpu::new(str::parse(&*mem).unwrap_or(16)),
-        None => Cpu::new(16),
-    };
+    let mut cpu = Cpu::new(
+        args.mem
+            .as_deref()
+            .and_then(|size| size.parse().ok())
+            .unwrap_or(DEFAULT_MEMORY_KIB),
+    );
     cpu.load(
         args.file
             .clone()
@@ -57,5 +67,20 @@ fn main() {
             .expect("not valid unicode"),
     );
 
-    cpu.run(args);
+    let config = RunConfig {
+        debug: args.debug,
+        registers: args.registers,
+        aliases: args.aliases,
+        interactive: args.interactive,
+        pc: args
+            .pc
+            .as_deref()
+            .and_then(|pc| u32::from_str_radix(pc, 16).ok()),
+        stack: args.stack,
+    };
+
+    match cpu.run(&config) {
+        Outcome::Exited(code) => ExitCode::from(code as u8),
+        _ => ExitCode::FAILURE,
+    }
 }
