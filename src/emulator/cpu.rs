@@ -10,6 +10,31 @@ const ALIASES: [&str; 32] = [
     "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6",
 ];
 
+/// What one step of the CPU did.
+enum Step {
+    /// Keep going, having executed the described instruction.
+    Continue(Trace),
+    /// The program stopped. The payload is the exit code.
+    Stopped(i32),
+}
+
+/// One executed instruction, kept so the caller can print it in whichever
+/// position its loop requires.
+struct Trace {
+    pc: u32,
+    raw: u32,
+    name: String,
+}
+
+impl Trace {
+    fn print(&self) {
+        println!(
+            "{:<08x}:   {:08x}          	{}",
+            self.pc, self.raw, self.name
+        );
+    }
+}
+
 pub struct Cpu {
     memory: Vec<u8>,
     registers: [u32; 32],
@@ -1094,8 +1119,8 @@ impl Cpu {
         }
     }
 
-    fn run_interactive(&mut self, args: Args) -> i32 {
-        let ret: i32;
+    /// Apply the run-time options that affect initial CPU state.
+    fn configure(&mut self, args: &Args) {
         // `--pc` is parsed and validated by the argument parser, so an
         // out-of-range or non-hex value is rejected before we get here.
         if let Some(pc) = args.pc {
@@ -1104,6 +1129,47 @@ impl Cpu {
         if args.stack {
             self.registers[2] = (self.memory.len() - 1) as u32;
         }
+    }
+
+    /// Fetch, decode and execute a single instruction, reporting `exit` and
+    /// traps on the way.
+    ///
+    /// This is the whole of the run loop apart from tracing, so both
+    /// interactive and batch mode share it. In particular they cannot drift
+    /// apart on what counts as a trap or how a program stops.
+    fn step(&mut self, args: &Args) -> Step {
+        let raw_inst = match self.fetch() {
+            Ok(inst) => inst,
+            Err(trap) => return self.stop_on_trap(trap, args),
+        };
+        let mut inst: Instruction = self.decode(raw_inst);
+        let pc = self.pc;
+
+        match self.execute(&mut inst) {
+            Ok(Outcome::Continue) => Step::Continue(Trace {
+                pc,
+                raw: raw_inst,
+                name: inst.name,
+            }),
+            Ok(Outcome::Exit(code)) => {
+                println!("Program exited with exit code: {}", code);
+                Step::Stopped(code)
+            }
+            Err(trap) => self.stop_on_trap(trap, args),
+        }
+    }
+
+    /// Report a trap if `--debug` is set and turn it into a stop.
+    fn stop_on_trap(&self, trap: Trap, args: &Args) -> Step {
+        if args.debug {
+            println!("{}", trap.message());
+        }
+        Step::Stopped(trap.exit_code())
+    }
+
+    fn run_interactive(&mut self, args: Args) -> i32 {
+        let ret: i32;
+        self.configure(&args);
         let mut buf = String::new();
         loop {
             buf.clear();
@@ -1113,46 +1179,23 @@ impl Cpu {
             buf.pop();
             self.command_handler(&*buf);
 
-            if (&*buf).is_empty() {
-                let raw_inst = match self.fetch() {
-                    Ok(inst) => inst,
-                    Err(trap) => {
-                        if args.debug {
-                            println!("{}", trap.message());
-                        }
-                        ret = trap.exit_code();
-                        break;
-                    }
-                };
-                let mut inst: Instruction = self.decode(raw_inst);
-                let pc_copy = self.pc;
-
-                match self.execute(&mut inst) {
-                    Ok(Outcome::Continue) => {}
-                    Ok(Outcome::Exit(code)) => {
-                        println!(
-                            "Program exited with exit code: {}",
-                            code
-                        );
-                        ret = code;
-                        break;
-                    }
-                    Err(trap) => {
-                        if args.debug {
-                            println!("{}", trap.message());
-                        }
-                        ret = trap.exit_code();
-                        break;
-                    }
-                }
-                if args.registers {
-                    self.print_registers(args.aliases);
-                }
-                println!(
-                    "{:<08x}:   {:08x}          	{}",
-                    pc_copy, raw_inst, inst.name
-                );
+            // A non-empty line was a debugger command, not a step.
+            if !buf.is_empty() {
+                continue;
             }
+
+            let trace = match self.step(&args) {
+                Step::Continue(trace) => trace,
+                Step::Stopped(code) => {
+                    ret = code;
+                    break;
+                }
+            };
+            if args.registers {
+                self.print_registers(args.aliases);
+            }
+            // Interactive mode always traces: that is the point of it.
+            trace.print();
         }
         ret
     }
@@ -1162,50 +1205,20 @@ impl Cpu {
             return self.run_interactive(args);
         }
         let ret: i32;
-        // `--pc` is parsed and validated by the argument parser, so an
-        // out-of-range or non-hex value is rejected before we get here.
-        if let Some(pc) = args.pc {
-            self.pc = pc;
-        }
-        if args.stack {
-            self.registers[2] = (self.memory.len() - 1) as u32;
-        }
+        self.configure(&args);
         loop {
             if args.registers {
                 self.print_registers(args.aliases);
             }
-            let raw_inst = match self.fetch() {
-                Ok(inst) => inst,
-                Err(trap) => {
-                    if args.debug {
-                        println!("{}", trap.message());
-                    }
-                    ret = trap.exit_code();
-                    break;
-                }
-            };
-            let mut inst: Instruction = self.decode(raw_inst);
-            let pc_copy = self.pc;
-            match self.execute(&mut inst) {
-                Ok(Outcome::Continue) => {}
-                Ok(Outcome::Exit(code)) => {
-                    println!("Program exited with exit code: {}", code);
+            let trace = match self.step(&args) {
+                Step::Continue(trace) => trace,
+                Step::Stopped(code) => {
                     ret = code;
                     break;
                 }
-                Err(trap) => {
-                    if args.debug {
-                        println!("{}", trap.message());
-                    }
-                    ret = trap.exit_code();
-                    break;
-                }
-            }
+            };
             if args.debug {
-                println!(
-                    "{:<08x}:   {:08x}          	{}",
-                    pc_copy, raw_inst, inst.name
-                );
+                trace.print();
             }
         }
         ret
