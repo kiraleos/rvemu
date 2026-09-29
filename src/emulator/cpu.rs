@@ -82,6 +82,14 @@ pub enum Step {
     Unsupported,
 }
 
+/// Parses the hex address that `mem` was given, into a message fit to print.
+fn parse_hex_address(argument: Option<&str>) -> Result<u32, String> {
+    let Some(text) = argument else {
+        return Err("expected a hex address".to_owned());
+    };
+    u32::from_str_radix(text, 16).map_err(|err| err.to_string())
+}
+
 impl Cpu {
     /// Creates a CPU with `mem_size` kilobytes of memory and every register
     /// zeroed.
@@ -473,42 +481,46 @@ impl Cpu {
         Outcome::UnsupportedSyscall(self.registers[A7])
     }
 
-    fn command_handler(&mut self, com: &str) {
-        if com.is_empty() {
-            return;
+    /// Interprets one line of interactive mode input, returning the reply to
+    /// print back, if there is one.
+    ///
+    /// An empty line means "step the program" and has no reply; the run loop
+    /// tells that case apart before calling.
+    fn command(&self, input: &str) -> Option<String> {
+        let mut words = input.split_whitespace();
+        match words.next()? {
+            "mem" => Some(self.read_word(words.next())),
+            "reg" => Some(self.read_register(words.next())),
+            command => Some(format!("Unknown command: {command}")),
         }
-        let tokens: Vec<&str> = com.split(' ').collect();
-        match tokens[0] {
-            "mem" => {
-                let addr = usize::from_str_radix(tokens[1], 16);
-                match addr {
-                    Ok(addr) => {
-                        if addr + 3 > self.memory.len() - 1 {
-                            println!("bad argument: memory out of bounds");
-                            return;
-                        }
-                        let chunk = self.load_bytes::<4>(addr as u32);
-                        println!("{:#010x}", chunk)
-                    }
-                    Err(err) => println!("bad argument: {}", err),
-                }
+    }
+
+    /// The 32-bit little-endian word at the hex address in `argument`.
+    fn read_word(&self, argument: Option<&str>) -> String {
+        let address = match parse_hex_address(argument) {
+            Ok(address) => address,
+            Err(reason) => return format!("bad argument: {reason}"),
+        };
+        match address.checked_add(3) {
+            Some(end) if (end as usize) < self.memory.len() => {
+                format!("{:#010x}", self.load_bytes::<4>(address))
             }
-            "reg" => {
-                let reg = tokens[1].parse::<usize>();
-                match reg {
-                    Ok(reg) => {
-                        if reg > self.registers.len() - 1 {
-                            println!("bad argument: no such register");
-                            return;
-                        }
-                        println!("{:#x}", self.registers[reg])
-                    }
-                    Err(err) => println!("bad argument: {}", err),
-                }
-            }
-            _ => {
-                println!("Unknown command: {}", tokens[0])
-            }
+            _ => "bad argument: memory out of bounds".to_owned(),
+        }
+    }
+
+    /// The value of the register named in `argument`.
+    fn read_register(&self, argument: Option<&str>) -> String {
+        let index = match argument {
+            Some(number) => match number.parse::<usize>() {
+                Ok(index) => index,
+                Err(err) => return format!("bad argument: {err}"),
+            },
+            None => return "bad argument: expected a register number".to_owned(),
+        };
+        match self.registers.get(index) {
+            Some(&value) => format!("{value:#x}"),
+            None => "bad argument: no such register".to_owned(),
         }
     }
 
@@ -535,7 +547,9 @@ impl Cpu {
                 io::stdout().flush().unwrap();
                 io::stdin().read_line(&mut line).unwrap();
                 line.pop();
-                self.command_handler(&line);
+                if let Some(reply) = self.command(&line) {
+                    println!("{reply}");
+                }
                 // An empty line steps the program; anything else was a command
                 // that has already been handled.
                 line.is_empty()
@@ -870,5 +884,41 @@ mod tests {
         assert_eq!(h.disasm(), "beq     x2,x3,fffffff8");
         h.step(enc::lui(1, 0xabcde));
         assert_eq!(h.disasm(), "lui     x1,0xabcde");
+    }
+
+    #[test]
+    fn commands_report_the_machine_state() {
+        let mut h = Harness::new();
+        h.set(2, 0x1234_5678).poke(0x14c, &[0x13, 0x01, 0x00, 0x00]);
+        let cpu = &h.cpu;
+        assert_eq!(cpu.command("reg 2").as_deref(), Some("0x12345678"));
+        assert_eq!(cpu.command("reg 0").as_deref(), Some("0x0"));
+        assert_eq!(cpu.command("mem 14c").as_deref(), Some("0x00000113"));
+        // Extra words after the argument are ignored.
+        assert_eq!(cpu.command("reg  2  ").as_deref(), Some("0x12345678"));
+    }
+
+    #[test]
+    fn a_command_without_an_argument_is_an_error_not_a_crash() {
+        let cpu = Harness::new().cpu;
+        for (input, expected) in [
+            ("reg", "bad argument: expected a register number"),
+            ("mem", "bad argument: expected a hex address"),
+            ("reg abc", "bad argument: invalid digit found in string"),
+            ("reg 99", "bad argument: no such register"),
+            ("mem ffffffff", "bad argument: memory out of bounds"),
+            ("mem zzz", "bad argument: invalid digit found in string"),
+            ("nonsense", "Unknown command: nonsense"),
+        ] {
+            assert_eq!(cpu.command(input).as_deref(), Some(expected), "{input}");
+        }
+    }
+
+    #[test]
+    fn an_empty_command_has_no_reply() {
+        // An empty line is the run loop's cue to step, not a command.
+        let cpu = Harness::new().cpu;
+        assert_eq!(cpu.command(""), None);
+        assert_eq!(cpu.command("   "), None);
     }
 }
