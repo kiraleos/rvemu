@@ -1,3 +1,10 @@
+// The emulator reinterprets bit patterns constantly: `slt` compares registers as
+// signed, a branch target is a signed offset added to a program counter, and a
+// sign extended immediate is a `u32` that has to print as the negative number it
+// is. Those are the semantics of the instruction set rather than accidents, so
+// the lints about them are muted here instead of at each of the sites.
+#![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+
 use super::instruction::{Instruction, sign_extend};
 use elf_rs::{Elf, ElfFile, ElfMachine};
 use std::error;
@@ -8,7 +15,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 /// The ABI name of every register, indexed by register number.
-const ALIASES: [&str; 32] = [
+const ALIASES: [&str; REGISTER_COUNT] = [
     "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2", "a3", "a4",
     "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4",
     "t5", "t6",
@@ -16,6 +23,9 @@ const ALIASES: [&str; 32] = [
 
 /// Number of general purpose registers, `x0` through `x31`.
 const REGISTER_COUNT: usize = 32;
+
+/// How many registers `print_registers` puts on one line.
+const REGISTERS_PER_LINE: usize = 4;
 
 /// `x2`, the stack pointer.
 const SP: usize = 2;
@@ -193,6 +203,10 @@ impl Cpu {
     ///
     /// # Panics
     ///
+    /// If the size is zero, or too large for a `usize` to hold in bytes.
+    ///
+    /// # Panics
+    ///
     /// If the size is zero, or too large to address.
     pub fn new(mem_size_kib: usize) -> Self {
         let size = mem_size_kib
@@ -215,6 +229,12 @@ impl Cpu {
     /// holds for the programs this emulator is meant to run but not in general:
     /// a segment at `p_offset != p_vaddr` ends up somewhere else, and so do
     /// anything but the file's own bytes, which are not in memory at all.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`LoadError`] if the file cannot be read, is not a RISC-V ELF
+    /// image, does not fit in the configured memory, or has an entry point that
+    /// is not inside a loadable segment.
     pub fn load(&mut self, path: impl AsRef<Path>) -> Result<(), LoadError> {
         let image = fs::read(path).map_err(LoadError::Io)?;
         let elf = Elf::from_bytes(&image).map_err(|_| LoadError::Malformed)?;
@@ -250,21 +270,24 @@ impl Cpu {
     /// `aliases` selects between the ABI names (`sp`, `a0`, ...) and the
     /// numeric ones (`x2`, `x10`, ...).
     pub fn print_registers(&self, aliases: bool) {
-        let mut reg_name;
-        println!(" pc: 0x{:0>8x}", self.pc);
-        let mut strbuilder = String::new();
-        for (i, alias) in ALIASES.iter().enumerate() {
+        println!(" pc: 0x{:08x}", self.pc);
+        let mut line = String::new();
+        for (index, &value) in self.registers.iter().enumerate() {
             if aliases {
-                strbuilder += &*format!("{:>4}: 0x{:0>8x}  ", *alias, self.registers[i]);
+                let _ = write!(line, "{:>4}: 0x{value:08x}  ", ALIASES[index]);
             } else {
-                reg_name = String::from("x") + &i.to_string();
-                strbuilder += &*format!("{:>3}: 0x{:0>8x}    ", reg_name, self.registers[i]);
+                // "x9" is a character shorter than "x10", so the low registers
+                // get a space to keep the columns lined up.
+                if index < 10 {
+                    line.push(' ');
+                }
+                let _ = write!(line, "x{index}: 0x{value:08x}    ");
             }
-            if (i + 1) % 4 == 0 {
-                strbuilder += "\n";
+            if (index + 1) % REGISTERS_PER_LINE == 0 {
+                line.push('\n');
             }
         }
-        println!("{}", strbuilder);
+        println!("{line}");
     }
 
     /// Reads the `N` little-endian bytes at `address`, zero extended.
@@ -316,8 +339,8 @@ impl Cpu {
                         other => panic!("unknown R funct7: {other:#09b}"),
                     },
                     0b001 => ("sll", a << (b & SHIFT_AMOUNT_MASK)),
-                    0b010 => ("slt", ((a as i32) < (b as i32)) as u32),
-                    0b011 => ("sltu", (a < b) as u32),
+                    0b010 => ("slt", u32::from((a as i32) < (b as i32))),
+                    0b011 => ("sltu", u32::from(a < b)),
                     0b100 => ("xor", a ^ b),
                     // `srl` and `sra`, like `add` and `sub`, share funct3.
                     0b101 => match funct7 {
@@ -368,8 +391,8 @@ impl Cpu {
                     _ => {
                         let (mnemonic, value) = match funct3 {
                             0b000 => ("addi", a.wrapping_add(imm)),
-                            0b010 => ("slti", ((a as i32) < imm as i32) as u32),
-                            0b011 => ("sltiu", (a < imm) as u32),
+                            0b010 => ("slti", u32::from((a as i32) < imm as i32)),
+                            0b011 => ("sltiu", u32::from(a < imm)),
                             0b100 => ("xori", a ^ imm),
                             0b110 => ("ori", a | imm),
                             0b111 => ("andi", a & imm),
@@ -633,14 +656,22 @@ impl Cpu {
     }
 
     /// Runs the program until it cannot go any further.
+    ///
+    /// # Panics
+    ///
+    /// If the program reads or writes outside the configured memory. The
+    /// emulator implements no traps or page faults, so a bad address is a bug in
+    /// the guest program and is reported as one.
     pub fn run(&mut self, config: &RunConfig) -> Outcome {
         if let Some(pc) = config.pc {
             self.pc = pc;
         }
         if config.stack {
             // The highest address in memory, so that a stack grows downwards
-            // into it.
-            self.registers[SP] = (self.memory.len() - 1) as u32;
+            // into it. RV32I addresses are 32 bits, so more memory than that is
+            // memory a program cannot name.
+            self.registers[SP] = u32::try_from(self.memory.len() - 1)
+                .expect("memory is larger than the address space");
         }
 
         // Both are reused for the life of the run, so that neither the prompt
@@ -679,9 +710,10 @@ impl Cpu {
 
             let mut step = None;
             if stepped {
-                let mut trace = match tracing {
-                    true => Trace::On(&mut disasm),
-                    false => Trace::Off,
+                let mut trace = if tracing {
+                    Trace::On(&mut disasm)
+                } else {
+                    Trace::Off
                 };
                 step = Some(self.execute(&instruction, &mut trace));
                 if config.interactive && config.registers {
