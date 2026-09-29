@@ -3,7 +3,7 @@ use crate::emulator::cpu::{Cpu, Outcome, RunConfig};
 fn add() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/add");
+    cpu.load("./tests/add").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -11,7 +11,7 @@ fn add() {
 fn addi() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/addi");
+    cpu.load("./tests/addi").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -19,7 +19,7 @@ fn addi() {
 fn and() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/and");
+    cpu.load("./tests/and").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -27,7 +27,7 @@ fn and() {
 fn andi() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/andi");
+    cpu.load("./tests/andi").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -35,7 +35,7 @@ fn andi() {
 fn auipc() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/auipc");
+    cpu.load("./tests/auipc").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -43,7 +43,7 @@ fn auipc() {
 fn beq() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/beq");
+    cpu.load("./tests/beq").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -51,7 +51,7 @@ fn beq() {
 fn bge() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/bge");
+    cpu.load("./tests/bge").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -59,7 +59,7 @@ fn bge() {
 fn bgeu() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/bgeu");
+    cpu.load("./tests/bgeu").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -67,7 +67,7 @@ fn bgeu() {
 fn blt() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/blt");
+    cpu.load("./tests/blt").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -75,7 +75,7 @@ fn blt() {
 fn bltu() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/bltu");
+    cpu.load("./tests/bltu").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -83,7 +83,7 @@ fn bltu() {
 fn bne() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/bne");
+    cpu.load("./tests/bne").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -91,7 +91,7 @@ fn bne() {
 fn fence_i() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/fence_i");
+    cpu.load("./tests/fence_i").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -99,7 +99,7 @@ fn fence_i() {
 fn jal() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/jal");
+    cpu.load("./tests/jal").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -107,7 +107,7 @@ fn jal() {
 fn jalr() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/jalr");
+    cpu.load("./tests/jalr").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -115,7 +115,7 @@ fn jalr() {
 fn lb() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/lb");
+    cpu.load("./tests/lb").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -123,7 +123,7 @@ fn lb() {
 fn lbu() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/lbu");
+    cpu.load("./tests/lbu").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -131,7 +131,7 @@ fn lbu() {
 fn lh() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/lh");
+    cpu.load("./tests/lh").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -139,7 +139,7 @@ fn lh() {
 fn lhu() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/lhu");
+    cpu.load("./tests/lhu").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -147,7 +147,7 @@ fn lhu() {
 fn lui() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/lui");
+    cpu.load("./tests/lui").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -155,7 +155,7 @@ fn lui() {
 fn lw() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/lw");
+    cpu.load("./tests/lw").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -163,7 +163,7 @@ fn lw() {
 fn or() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/or");
+    cpu.load("./tests/or").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -171,7 +171,7 @@ fn or() {
 fn ori() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/ori");
+    cpu.load("./tests/ori").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -179,7 +179,7 @@ fn ori() {
 fn sb() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sb");
+    cpu.load("./tests/sb").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -187,7 +187,7 @@ fn sb() {
 fn sh() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sh");
+    cpu.load("./tests/sh").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -195,7 +195,7 @@ fn sh() {
 fn simple() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/simple");
+    cpu.load("./tests/simple").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -203,7 +203,7 @@ fn simple() {
 fn sll() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sll");
+    cpu.load("./tests/sll").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -211,7 +211,7 @@ fn sll() {
 fn slli() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/slli");
+    cpu.load("./tests/slli").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -219,7 +219,7 @@ fn slli() {
 fn slt() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/slt");
+    cpu.load("./tests/slt").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -227,7 +227,7 @@ fn slt() {
 fn slti() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/slti");
+    cpu.load("./tests/slti").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -235,7 +235,7 @@ fn slti() {
 fn sltiu() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sltiu");
+    cpu.load("./tests/sltiu").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -243,7 +243,7 @@ fn sltiu() {
 fn sltu() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sltu");
+    cpu.load("./tests/sltu").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -251,7 +251,7 @@ fn sltu() {
 fn sra() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sra");
+    cpu.load("./tests/sra").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -259,7 +259,7 @@ fn sra() {
 fn srai() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/srai");
+    cpu.load("./tests/srai").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -267,7 +267,7 @@ fn srai() {
 fn srl() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/srl");
+    cpu.load("./tests/srl").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -275,7 +275,7 @@ fn srl() {
 fn srli() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/srli");
+    cpu.load("./tests/srli").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -283,7 +283,7 @@ fn srli() {
 fn sub() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sub");
+    cpu.load("./tests/sub").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -291,7 +291,7 @@ fn sub() {
 fn sw() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/sw");
+    cpu.load("./tests/sw").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -299,7 +299,7 @@ fn sw() {
 fn xor() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/xor");
+    cpu.load("./tests/xor").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }
 
@@ -307,6 +307,6 @@ fn xor() {
 fn xori() {
     let mut cpu = Cpu::new(16);
     let config = RunConfig::default();
-    cpu.load("./tests/xori");
+    cpu.load("./tests/xori").unwrap();
     assert_eq!(cpu.run(&config), Outcome::Exited(0));
 }

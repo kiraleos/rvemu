@@ -53,19 +53,16 @@ const DEFAULT_MEMORY_KIB: usize = 16;
 fn main() -> ExitCode {
     let args = Args::parse();
 
-    let mut cpu = Cpu::new(
-        args.mem
-            .as_deref()
-            .and_then(|size| size.parse().ok())
-            .unwrap_or(DEFAULT_MEMORY_KIB),
-    );
-    cpu.load(
-        args.file
-            .clone()
-            .into_os_string()
-            .to_str()
-            .expect("not valid unicode"),
-    );
+    let mem = args
+        .mem
+        .as_deref()
+        .and_then(|size| size.parse().ok())
+        .unwrap_or(DEFAULT_MEMORY_KIB);
+    let mut cpu = Cpu::new(mem);
+    if let Err(err) = cpu.load(&args.file) {
+        eprintln!("{}: {err}", args.file.display());
+        return ExitCode::FAILURE;
+    }
 
     let config = RunConfig {
         debug: args.debug,

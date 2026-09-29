@@ -1,7 +1,11 @@
 use super::instruction::{sign_extend, Instruction};
-use elf_rs::{Elf, ElfFile};
+use elf_rs::{Elf, ElfFile, ElfMachine};
+use std::error;
+use std::fmt;
 use std::fmt::Write as _;
-use std::io::{self, Read, Write};
+use std::fs;
+use std::io::{self, Write};
+use std::path::Path;
 
 /// The ABI name of every register, indexed by register number.
 const ALIASES: [&str; 32] = [
@@ -62,6 +66,53 @@ pub enum Outcome {
     UnsupportedInstruction,
 }
 
+/// Why loading an ELF image into memory failed.
+#[derive(Debug)]
+pub enum LoadError {
+    /// The file could not be opened or read.
+    Io(io::Error),
+    /// The file is not a well formed ELF image.
+    Malformed,
+    /// The image is not a RISC-V executable.
+    WrongArchitecture,
+    /// The image does not fit in the configured amount of memory.
+    ImageTooLarge {
+        /// The size of the image, in bytes.
+        size: usize,
+        /// How much memory the CPU has, in bytes.
+        capacity: usize,
+    },
+    /// The entry point is not inside a loadable segment, or does not fit in
+    /// the 32-bit address space.
+    EntryPointNotLoadable,
+}
+
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoadError::Io(err) => write!(f, "{err}"),
+            LoadError::Malformed => write!(f, "not a valid ELF file"),
+            LoadError::WrongArchitecture => write!(f, "not a RISC-V executable"),
+            LoadError::ImageTooLarge { size, capacity } => write!(
+                f,
+                "the image needs {size} bytes of memory but there are {capacity}"
+            ),
+            LoadError::EntryPointNotLoadable => {
+                write!(f, "the entry point is not inside a loadable segment")
+            }
+        }
+    }
+}
+
+impl error::Error for LoadError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            LoadError::Io(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
 /// A RISC-V RV32I CPU, as described by the unprivileged base integer spec.
 pub struct Cpu {
     memory: Vec<u8>,
@@ -103,34 +154,41 @@ impl Cpu {
 
     /// Loads an ELF image into memory and points the program counter at its
     /// entry point.
-    pub fn load(&mut self, path: &str) {
-        let mut elf_file = std::fs::File::open(path).expect("open file failed");
-        let mut elf_buf = Vec::<u8>::new();
-        elf_file
-            .read_to_end(&mut elf_buf)
-            .expect("read file failed");
-        let elf = Elf::from_bytes(&elf_buf).expect("Are you sure this is an ELF file?");
-        match elf.elf_header().machine() {
-            elf_rs::ElfMachine::RISC_V => {
-                for phdr in elf.program_header_iter() {
-                    let e_entry = elf.entry_point();
-                    if phdr.vaddr() <= e_entry && e_entry < phdr.vaddr() + phdr.memsz() {
-                        let p_vaddr = phdr.vaddr();
-                        let p_offset = phdr.offset();
-                        self.pc = (e_entry - p_vaddr + p_offset)
-                            .try_into()
-                            .expect("couldn't convert u64 entry addr to u32");
-                    }
-                }
-            }
-            _ => {
-                panic!(
-                    "unsupported architecture: {:#?}",
-                    elf.elf_header().machine()
-                );
-            }
+    ///
+    /// The image is copied in whole, at the addresses its file offsets give it,
+    /// instead of being unpacked segment by segment. Those are the same thing
+    /// only when every segment's file offset matches its virtual address, which
+    /// holds for the programs this emulator is meant to run but not in general:
+    /// a segment at `p_offset != p_vaddr` ends up somewhere else, and so do
+    /// anything but the file's own bytes, which are not in memory at all.
+    pub fn load(&mut self, path: impl AsRef<Path>) -> Result<(), LoadError> {
+        let image = fs::read(path).map_err(LoadError::Io)?;
+        let elf = Elf::from_bytes(&image).map_err(|_| LoadError::Malformed)?;
+        if elf.elf_header().machine() != ElfMachine::RISC_V {
+            return Err(LoadError::WrongArchitecture);
         }
-        self.memory[..elf_buf.len()].copy_from_slice(&elf_buf);
+        if image.len() > self.memory.len() {
+            return Err(LoadError::ImageTooLarge {
+                size: image.len(),
+                capacity: self.memory.len(),
+            });
+        }
+
+        // The entry point is a virtual address while the program counter reads
+        // memory, so it has to be translated through the segment holding it.
+        let entry = elf.entry_point();
+        let offset = elf
+            .program_header_iter()
+            .find_map(|phdr| {
+                (phdr.vaddr() <= entry && entry < phdr.vaddr() + phdr.memsz())
+                    .then(|| entry - phdr.vaddr() + phdr.offset())
+            })
+            .ok_or(LoadError::EntryPointNotLoadable)?;
+        let pc = u32::try_from(offset).map_err(|_| LoadError::EntryPointNotLoadable)?;
+
+        self.memory[..image.len()].copy_from_slice(&image);
+        self.pc = pc;
+        Ok(())
     }
 
     /// Prints the program counter and every register, four to a line.
@@ -601,6 +659,7 @@ impl Cpu {
 mod tests {
     use super::*;
     use crate::emulator::instruction::enc;
+    use std::env;
 
     /// A CPU set up to execute one instruction at a time, so that a test can
     /// state an instruction and look at the machine state it leaves behind.
@@ -920,5 +979,43 @@ mod tests {
         let cpu = Harness::new().cpu;
         assert_eq!(cpu.command(""), None);
         assert_eq!(cpu.command("   "), None);
+    }
+
+    #[test]
+    fn loading_reports_why_it_failed() {
+        // No such file.
+        let err = Cpu::new(16).load("does/not/exist").unwrap_err();
+        assert!(matches!(err, LoadError::Io(_)), "{err}");
+
+        // A file that is not an ELF image at all.
+        let err = Cpu::new(16)
+            .load(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))
+            .unwrap_err();
+        assert!(matches!(err, LoadError::Malformed), "{err}");
+
+        // A well formed ELF image, but for another architecture: the test
+        // binary itself is a native executable.
+        let err = Cpu::new(1024)
+            .load(env::current_exe().unwrap())
+            .unwrap_err();
+        assert!(matches!(err, LoadError::WrongArchitecture), "{err}");
+
+        // A correct image that does not fit in the configured memory.
+        let err = Cpu::new(1)
+            .load(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/add"))
+            .unwrap_err();
+        assert!(
+            matches!(err, LoadError::ImageTooLarge { size, capacity }
+                if size > capacity),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn loading_points_the_program_counter_at_the_entry_point() {
+        let mut cpu = Cpu::new(16);
+        cpu.load(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/add"))
+            .unwrap();
+        assert_eq!(cpu.pc, 0x1000);
     }
 }
