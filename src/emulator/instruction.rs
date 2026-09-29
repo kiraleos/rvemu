@@ -131,40 +131,45 @@ impl Instruction {
                 rd: rd(inst),
                 funct3: funct3(inst),
                 rs1: rs1(inst),
-                imm: sign_extend(inst >> 20 & IMM12, 12),
+                imm: sign_extend(field(inst, 20, 12), 12),
             },
             opcode::LOAD => Instruction::Load {
                 rd: rd(inst),
                 funct3: funct3(inst),
                 rs1: rs1(inst),
-                imm: sign_extend(inst >> 20 & IMM12, 12),
+                imm: sign_extend(field(inst, 20, 12), 12),
             },
             opcode::JALR => Instruction::JumpRegister {
                 rd: rd(inst),
                 rs1: rs1(inst),
-                imm: sign_extend(inst >> 20 & IMM12, 12),
+                imm: sign_extend(field(inst, 20, 12), 12),
             },
             opcode::SYSTEM => Instruction::System {
                 rd: rd(inst),
                 funct3: funct3(inst),
                 rs1: rs1(inst),
-                imm: sign_extend(inst >> 20 & IMM12, 12),
+                imm: sign_extend(field(inst, 20, 12), 12),
             },
             opcode::STORE => Instruction::Store {
-                // imm[11:5] sits in the funct7 field, imm[4:0] in the rd one.
-                imm: sign_extend((inst >> 25 & IMM_11_5) << 5 | inst >> 7 & IMM_4_0, 12),
+                // imm[11:5] in inst[31:25], imm[4:0] in inst[11:7].
+                imm: sign_extend(field(inst, 25, 7) << 5 | field(inst, 7, 5), 12),
                 funct3: funct3(inst),
                 rs1: rs1(inst),
                 rs2: rs2(inst),
             },
             opcode::BRANCH => Instruction::Branch {
-                // imm[12|10:5] in funct7|rs2, imm[4:1|11] in rd|rs1.
+                // imm[12|10:5|4:1|11] in inst[31|30:25|11:8|7].
+                //
+                // The assembled immediate occupies bits 12..1 but is only 13
+                // bits wide, so it is sign extended from bit 12. Sign extending
+                // one bit too few silently misplaces every offset from 2048 up
+                // to 4094, and every offset from -4096 to -2049.
                 imm: sign_extend(
-                    (inst >> 31 & IMM_4_0) << 12
-                        | (inst >> 7 & IMM_4_0) << 11
-                        | (inst >> 25 & 0b11_1111) << 5
-                        | (inst >> 8 & 0b1111) << 1,
-                    12,
+                    field(inst, 31, 1) << 12
+                        | field(inst, 7, 1) << 11
+                        | field(inst, 25, 6) << 5
+                        | field(inst, 8, 4) << 1,
+                    13,
                 ),
                 funct3: funct3(inst),
                 rs1: rs1(inst),
@@ -172,22 +177,23 @@ impl Instruction {
             },
             opcode::JAL => Instruction::Jump {
                 rd: rd(inst),
-                // imm[20|10:1|11|19:12] in funct7|rs1|rs2|rd.
+                // imm[20|19:12|11|10:1] in inst[31|19:12|20|30:21], 21 bits
+                // wide, so sign extended from bit 20.
                 imm: sign_extend(
-                    (inst >> 31 & IMM_4_0) << 20
-                        | (inst >> 12 & 0b1111_1111) << 12
-                        | (inst >> 20 & IMM_4_0) << 11
-                        | (inst >> 21 & 0b11_1111_1111) << 1,
-                    12,
+                    field(inst, 31, 1) << 20
+                        | field(inst, 12, 8) << 12
+                        | field(inst, 20, 1) << 11
+                        | field(inst, 21, 10) << 1,
+                    21,
                 ),
             },
             opcode::LUI => Instruction::Lui {
                 rd: rd(inst),
-                imm: inst >> 12 & IMM20,
+                imm: field(inst, 12, 20),
             },
             opcode::AUIPC => Instruction::Auipc {
                 rd: rd(inst),
-                imm: inst >> 12 & IMM20,
+                imm: field(inst, 12, 20),
             },
             opcode::MISC_MEM => Instruction::Fence,
             _ => Instruction::Unsupported,
@@ -205,43 +211,36 @@ pub fn sign_extend(value: u32, bits: u32) -> u32 {
     (((value << (32 - bits)) as i32) >> (32 - bits)) as u32
 }
 
-/// Masks for the pieces of an instruction that carry an immediate.
-mod imm {
-    /// bits 31:20, the whole immediate of an I-type instruction.
-    pub const IMM12: u32 = 0b1111_1111_1111;
-    /// bits 31:25, the high part of an S-type immediate.
-    pub const IMM_11_5: u32 = 0b111_1111;
-    /// bits 11:7, the low part of an S-type immediate, and a single bit where
-    /// the B and J formats scatter single immediate bits.
-    pub const IMM_4_0: u32 = 0b1_1111;
-    /// bits 31:12, the whole immediate of a U-type instruction.
-    pub const IMM20: u32 = 0xf_ffff;
+/// Extracts the `width`-bit field of `inst` that starts at bit `shift`.
+///
+/// Every scattered immediate bit is read through this, so a field can never
+/// pick up a neighbouring one by accident.
+fn field(inst: u32, shift: u32, width: u32) -> u32 {
+    (inst >> shift) & ((1 << width) - 1)
 }
 
-use imm::*;
-
 fn opcode(inst: u32) -> u32 {
-    inst & 0b0000_0000_0000_0000_0000_0000_0111_1111
+    field(inst, 0, 7)
 }
 
 fn rd(inst: u32) -> usize {
-    (inst >> 7 & 0b1_1111) as usize
+    field(inst, 7, 5) as usize
 }
 
 fn funct3(inst: u32) -> u32 {
-    inst >> 12 & 0b111
+    field(inst, 12, 3)
 }
 
 fn rs1(inst: u32) -> usize {
-    (inst >> 15 & 0b1_1111) as usize
+    field(inst, 15, 5) as usize
 }
 
 fn rs2(inst: u32) -> usize {
-    (inst >> 20 & 0b1_1111) as usize
+    field(inst, 20, 5) as usize
 }
 
 fn funct7(inst: u32) -> u32 {
-    inst >> 25 & 0b111_1111
+    field(inst, 25, 7)
 }
 
 #[cfg(test)]
@@ -267,6 +266,8 @@ mod tests {
                 | opcode
         }
         const fn b(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: i32) -> u32 {
+            // A 13-bit signed even offset, so -4096..=4094.
+            assert!(imm % 2 == 0 && -4096 <= imm && imm <= 4094);
             let imm = imm as u32;
             ((imm >> 12) & 1) << 31
                 | ((imm >> 5) & 0b11_1111) << 25
@@ -279,6 +280,17 @@ mod tests {
         }
         const fn u(opcode: u32, rd: u32, imm: u32) -> u32 {
             (imm << 12) | (rd << 7) | opcode
+        }
+        const fn j(opcode: u32, rd: u32, imm: i32) -> u32 {
+            // A 21-bit signed even offset, so -1048576..=1048574.
+            assert!(imm % 2 == 0 && -1_048_576 <= imm && imm <= 1_048_574);
+            let imm = imm as u32;
+            ((imm >> 20) & 1) << 31
+                | ((imm >> 1) & 0b11_1111_1111) << 21
+                | ((imm >> 11) & 1) << 20
+                | ((imm >> 12) & 0xff) << 12
+                | (rd << 7)
+                | opcode
         }
     }
 
@@ -377,6 +389,49 @@ mod tests {
                 rs2: 2
             }
         );
+    }
+
+    /// The immediate carried by a decoded branch or jump.
+    fn imm_of(inst: Instruction) -> u32 {
+        match inst {
+            Instruction::Branch { imm, .. } | Instruction::Jump { imm, .. } => imm,
+            other => panic!("expected a branch or a jump, got {other:?}"),
+        }
+    }
+
+    /// B-type offsets that straddle the point where the encoding's immediate
+    /// bits stop agreeing with each other: from 2048 upwards `imm[11]` and
+    /// `imm[12]` disagree. All of them are even, because the format has no
+    /// `imm[0]` and so cannot encode an odd offset at all.
+    const BRANCH_OFFSETS: [i32; 9] = [0, 4, -4, 0x7fc, -0x800, 0x800, -0x802, 0xffe, -0x1000];
+
+    /// J-type offsets, where the same disagreement is between `imm[11]` and
+    /// `imm[20]` and the range is twenty bits wider.
+    const JUMP_OFFSETS: [i32; 13] = [
+        0, 4, -4, 0x7fc, -0x800, 0x800, -0x802, 0xffe, -0x1000, 0x1000, -0x100_000, 0xff_ffe,
+        -0x1_0000,
+    ];
+
+    #[test]
+    fn branch_immediate_survives_decoding() {
+        for offset in BRANCH_OFFSETS {
+            assert_eq!(
+                imm_of(Instruction::decode(Enc::b(0b110_0011, 0b000, 1, 2, offset))),
+                offset as u32,
+                "branch offset {offset:#x}"
+            );
+        }
+    }
+
+    #[test]
+    fn jump_immediate_survives_decoding() {
+        for offset in JUMP_OFFSETS {
+            assert_eq!(
+                imm_of(Instruction::decode(Enc::j(0b110_1111, 1, offset))),
+                offset as u32,
+                "jump offset {offset:#x}"
+            );
+        }
     }
 
     #[test]
